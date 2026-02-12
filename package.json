@@ -9,16 +9,35 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@langchain/classic": "^1.0.17",
     "@langchain/core": "^1.1.22",
+    "@langchain/langgraph": "^1.1.4",
     "@langchain/openai": "^1.2.7",
+    "@langchain/textsplitters": "^1.0.1",
+    "better-sqlite3": "^12.6.2",
     "langchain": "^1.2.21",
     "next": "16.1.6",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.18.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
+    "@types/pg": "^8.16.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
