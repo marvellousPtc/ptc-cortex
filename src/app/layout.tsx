@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { verifySession } from "@/lib/auth-check";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,11 +20,22 @@ export const metadata: Metadata = {
   description: "PTC 的 AI 能力中心，为所有项目提供智能服务",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // 服务端验证 session cookie（查数据库，防伪造）
+  const cookieStore = await cookies();
+  const sessionToken =
+    cookieStore.get("__Secure-authjs.session-token")?.value ||
+    cookieStore.get("authjs.session-token")?.value;
+
+  if (!sessionToken || !(await verifySession(sessionToken))) {
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "/chat";
+    redirect(`/login?callbackUrl=${encodeURIComponent(basePath)}`);
+  }
+
   return (
     <html lang="en">
       <body

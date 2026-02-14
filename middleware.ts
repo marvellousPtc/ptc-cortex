@@ -1,10 +1,14 @@
 /**
  * 认证中间件 — 保护 /chat 页面，仅允许已登录用户访问
  *
- * 流程：
- * 1. 读取 NextAuth session cookie（与 ink-and-code 共享同域 cookie）
- * 2. 调用内部 /api/auth/verify 验证 session 是否有效
- * 3. 无效则 302 重定向到 ink-and-code 的登录页
+ * 检查 NextAuth session cookie（与 ink-and-code 共享同域 cookie）：
+ * - cookie 存在 → 放行
+ * - cookie 不存在 → 302 重定向到 ink-and-code 的登录页
+ *
+ * 安全性说明：
+ * NextAuth 的 session cookie 是 HttpOnly + Secure + SameSite，
+ * 普通用户无法通过 JS 伪造。即使 cookie 过期，
+ * 后续的 API 调用也会因 session 无效而返回错误，不会造成安全问题。
  */
 
 import { NextResponse } from "next/server";
@@ -17,33 +21,15 @@ export async function middleware(request: NextRequest) {
     request.cookies.get("__Secure-authjs.session-token")?.value ||
     request.cookies.get("authjs.session-token")?.value;
 
-  const origin = request.nextUrl.origin;
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-
-  // 构建登录页 URL（ink-and-code 的 /login，不在 basePath 下）
-  const loginUrl = new URL("/login", origin);
-  loginUrl.searchParams.set("callbackUrl", basePath || "/chat");
-
-  // 没有 session cookie → 直接重定向
+  // 没有 session cookie → 重定向到登录页
   if (!sessionToken) {
+    const origin = request.nextUrl.origin;
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "/chat";
+
+    const loginUrl = new URL("/login", origin);
+    loginUrl.searchParams.set("callbackUrl", basePath);
+
     return NextResponse.redirect(loginUrl);
-  }
-
-  // 调用内部 API 验证 session 是否有效
-  try {
-    const verifyUrl = `${origin}${basePath}/api/auth/verify`;
-    const res = await fetch(verifyUrl, {
-      headers: { "x-session-token": sessionToken },
-    });
-
-    const data = await res.json();
-
-    if (!data.valid) {
-      return NextResponse.redirect(loginUrl);
-    }
-  } catch (error) {
-    // 验证请求失败时放行（避免因内部错误导致全站不可用）
-    console.error("Auth middleware verify failed:", error);
   }
 
   return NextResponse.next();
