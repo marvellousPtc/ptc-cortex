@@ -24,7 +24,7 @@ async function ensureTables() {
   const pool = getPool();
   await pool.query(`
     -- 会话表：每个对话一条记录
-    CREATE TABLE IF NOT EXISTS sessions (
+    CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '新对话',
       persona TEXT NOT NULL DEFAULT 'assistant',
@@ -33,16 +33,16 @@ async function ensureTables() {
     );
 
     -- 消息表：每条聊天消息一条记录
-    CREATE TABLE IF NOT EXISTS messages (
+    CREATE TABLE IF NOT EXISTS chat_messages (
       id SERIAL PRIMARY KEY,
-      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
       role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
       content TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
 
     -- 自定义角色表
-    CREATE TABLE IF NOT EXISTS custom_personas (
+    CREATE TABLE IF NOT EXISTS chat_custom_personas (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       emoji TEXT NOT NULL DEFAULT '🤖',
@@ -93,7 +93,7 @@ export async function createSession(
   const pool = getPool();
   const id = generateId();
   await pool.query(
-    "INSERT INTO sessions (id, persona) VALUES ($1, $2)",
+    "INSERT INTO chat_sessions (id, persona) VALUES ($1, $2)",
     [id, persona]
   );
   return (await getSession(id))!;
@@ -106,7 +106,7 @@ export async function getSession(
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM sessions WHERE id = $1",
+    "SELECT * FROM chat_sessions WHERE id = $1",
     [id]
   );
   return rows[0] as Session | undefined;
@@ -117,7 +117,7 @@ export async function getAllSessions(): Promise<Session[]> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM sessions ORDER BY updated_at DESC"
+    "SELECT * FROM chat_sessions ORDER BY updated_at DESC"
   );
   return rows as Session[];
 }
@@ -130,7 +130,7 @@ export async function updateSessionTitle(
   await ensureTables();
   const pool = getPool();
   await pool.query(
-    "UPDATE sessions SET title = $1, updated_at = NOW() WHERE id = $2",
+    "UPDATE chat_sessions SET title = $1, updated_at = NOW() WHERE id = $2",
     [title, id]
   );
 }
@@ -143,7 +143,7 @@ export async function updateSessionPersona(
   await ensureTables();
   const pool = getPool();
   await pool.query(
-    "UPDATE sessions SET persona = $1, updated_at = NOW() WHERE id = $2",
+    "UPDATE chat_sessions SET persona = $1, updated_at = NOW() WHERE id = $2",
     [persona, id]
   );
 }
@@ -152,7 +152,7 @@ export async function updateSessionPersona(
 export async function deleteSession(id: string): Promise<void> {
   await ensureTables();
   const pool = getPool();
-  await pool.query("DELETE FROM sessions WHERE id = $1", [id]);
+  await pool.query("DELETE FROM chat_sessions WHERE id = $1", [id]);
 }
 
 // ===== 消息相关操作 =====
@@ -166,13 +166,13 @@ export async function addMessage(
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "INSERT INTO messages (session_id, role, content) VALUES ($1, $2, $3) RETURNING *",
+    "INSERT INTO chat_messages (session_id, role, content) VALUES ($1, $2, $3) RETURNING *",
     [sessionId, role, content]
   );
 
   // 同时更新会话的 updated_at
   await pool.query(
-    "UPDATE sessions SET updated_at = NOW() WHERE id = $1",
+    "UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1",
     [sessionId]
   );
 
@@ -184,7 +184,7 @@ export async function getMessages(sessionId: string): Promise<Message[]> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM messages WHERE session_id = $1 ORDER BY created_at ASC",
+    "SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC",
     [sessionId]
   );
   return rows as Message[];
@@ -200,7 +200,7 @@ export async function getRecentMessages(
   // 取最近 N 条，但要按时间正序返回
   const { rows } = await pool.query(
     `SELECT * FROM (
-      SELECT * FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2
+      SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2
     ) sub ORDER BY created_at ASC`,
     [sessionId, limit]
   );
@@ -221,7 +221,7 @@ export async function createCustomPersona(
   const pool = getPool();
   const id = "custom_" + generateId();
   const { rows } = await pool.query(
-    "INSERT INTO custom_personas (id, name, emoji, description, prompt, temperature) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+    "INSERT INTO chat_custom_personas (id, name, emoji, description, prompt, temperature) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
     [id, name, emoji, description, prompt, temperature]
   );
   return rows[0] as CustomPersona;
@@ -232,7 +232,7 @@ export async function getAllCustomPersonas(): Promise<CustomPersona[]> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM custom_personas ORDER BY created_at DESC"
+    "SELECT * FROM chat_custom_personas ORDER BY created_at DESC"
   );
   return rows as CustomPersona[];
 }
@@ -244,7 +244,7 @@ export async function getCustomPersona(
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM custom_personas WHERE id = $1",
+    "SELECT * FROM chat_custom_personas WHERE id = $1",
     [id]
   );
   return rows[0] as CustomPersona | undefined;
@@ -254,7 +254,7 @@ export async function getCustomPersona(
 export async function deleteCustomPersona(id: string): Promise<void> {
   await ensureTables();
   const pool = getPool();
-  await pool.query("DELETE FROM custom_personas WHERE id = $1", [id]);
+  await pool.query("DELETE FROM chat_custom_personas WHERE id = $1", [id]);
 }
 
 // ===== 工具函数 =====

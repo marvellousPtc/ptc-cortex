@@ -25,7 +25,7 @@ async function ensureMemoryTable() {
 
   const pool = getPool();
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS long_memories (
+    CREATE TABLE IF NOT EXISTS chat_long_memories (
       id SERIAL PRIMARY KEY,
       session_id TEXT,
       content TEXT NOT NULL,
@@ -33,7 +33,7 @@ async function ensureMemoryTable() {
       importance TEXT NOT NULL DEFAULT 'normal',
       created_at TIMESTAMP DEFAULT NOW()
     );
-    CREATE INDEX IF NOT EXISTS idx_memories_keywords ON long_memories(keywords);
+    CREATE INDEX IF NOT EXISTS idx_chat_memories_keywords ON chat_long_memories(keywords);
   `);
   tableInitialized = true;
 }
@@ -59,7 +59,7 @@ export async function saveMemory(
   await ensureMemoryTable();
   const pool = getPool();
   await pool.query(
-    "INSERT INTO long_memories (session_id, content, keywords, importance) VALUES ($1, $2, $3, $4)",
+    "INSERT INTO chat_long_memories (session_id, content, keywords, importance) VALUES ($1, $2, $3, $4)",
     [sessionId, content, keywords, importance]
   );
   console.log(`🧠 保存长期记忆: ${content.slice(0, 50)}...`);
@@ -99,7 +99,7 @@ export async function searchMemories(
   }
 
   const { rows } = await pool.query(
-    `SELECT * FROM long_memories WHERE ${conditions.join(" OR ")} ORDER BY
+    `SELECT * FROM chat_long_memories WHERE ${conditions.join(" OR ")} ORDER BY
      CASE importance WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
      created_at DESC
      LIMIT $${paramIndex}`,
@@ -116,7 +116,7 @@ export async function getAllMemories(): Promise<LongMemory[]> {
   await ensureMemoryTable();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM long_memories ORDER BY created_at DESC LIMIT 100"
+    "SELECT * FROM chat_long_memories ORDER BY created_at DESC LIMIT 100"
   );
   return rows as LongMemory[];
 }
