@@ -90,9 +90,12 @@ jobs:
               pm2 stop ptc-cortex
             fi
 
-            # 备份 .env.local（含 API 密钥，不能丢）
+            # 备份环境变量文件（含 API 密钥，不能丢）
             if [ -f "$PROJECT_PATH/.env.local" ]; then
               cp "$PROJECT_PATH/.env.local" /tmp/.env.local.backup
+            fi
+            if [ -f "$PROJECT_PATH/.env" ]; then
+              cp "$PROJECT_PATH/.env" /tmp/.env.backup
             fi
 
             # 备份上传文件目录
@@ -110,9 +113,12 @@ jobs:
             # 解压新文件
             tar -xzf /tmp/deploy.tar.gz -C "$PROJECT_PATH"
 
-            # 恢复 .env.local
+            # 恢复环境变量文件
             if [ -f "/tmp/.env.local.backup" ]; then
               mv /tmp/.env.local.backup "$PROJECT_PATH/.env.local"
+            fi
+            if [ -f "/tmp/.env.backup" ]; then
+              mv /tmp/.env.backup "$PROJECT_PATH/.env"
             fi
 
             # 恢复上传文件
