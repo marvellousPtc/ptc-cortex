@@ -167,6 +167,36 @@ export const imageGenerationTool = tool(
   }
 );
 
+// ===== 工具 6.5：即梦 AI 图片生成 =====
+// 接入火山引擎方舟 API（doubao-seedream-4-5），高质量中文图片生成
+import { generateJimengImage } from "./jimeng-image-gen";
+
+export const jimengImageTool = tool(
+  async ({ prompt, size }) => {
+    const result = await generateJimengImage(prompt, size);
+    if (result.startsWith("http")) {
+      return `![${prompt}](${result})`;
+    }
+    return result;
+  },
+  {
+    name: "generate_image_jimeng",
+    description:
+      "使用即梦 AI（豆包 Seedream）生成高质量图片。支持中文提示词，效果非常好。" +
+      "当用户要求画图、生成图片、创建图像时优先使用此工具。" +
+      "传入图片的描述（中文或英文均可），返回生成的图片。",
+    schema: z.object({
+      prompt: z
+        .string()
+        .describe("图片的详细描述，中文或英文均可。例如 '一只可爱的猫咪坐在沙发上，数字艺术风格'"),
+      size: z
+        .string()
+        .describe("图片分辨率，可选值：2K（默认）、4K。分辨率越高耗时越长")
+        .default("2K"),
+    }),
+  }
+);
+
 // ===== 工具 7：图片理解 =====
 // 用多模态模型分析图片内容
 import { analyzeImage } from "./vision";
@@ -250,6 +280,7 @@ export const ALL_TOOLS = [
   knowledgeBaseTool,
   webSearchTool,
   imageGenerationTool,
+  jimengImageTool,
   imageUnderstandingTool,
   fileParserTool,
   blogDbSchemaTool,

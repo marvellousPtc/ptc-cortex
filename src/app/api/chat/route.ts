@@ -21,6 +21,8 @@ import {
 import { getCurrentUserId } from "@/lib/auth-check";
 import { createAgent } from "@/lib/graph";
 import { ALL_TOOLS, webSearchTool } from "@/lib/tools";
+import { getMcpTools } from "@/lib/mcp-client";
+import { StructuredToolInterface } from "@langchain/core/tools";
 import {
   searchMemories,
   saveMemory,
@@ -159,9 +161,22 @@ export async function POST(request: NextRequest) {
     const dateContext = `\n[当前日期: ${dateStr}]`;
 
     // 根据用户设置过滤工具
-    const tools = webSearchEnabled
-      ? ALL_TOOLS
+    let tools: StructuredToolInterface[] = webSearchEnabled
+      ? [...ALL_TOOLS]
       : ALL_TOOLS.filter((t) => t !== webSearchTool);
+
+    // ====== MCP 工具：加载用户配置的 MCP server 工具 ======
+    let mcpCleanup: (() => Promise<void>) | null = null;
+    try {
+      const mcp = await getMcpTools(userId);
+      if (mcp.tools.length > 0) {
+        tools = [...tools, ...mcp.tools];
+        mcpCleanup = mcp.cleanup;
+        console.log(`🔌 MCP: 合并 ${mcp.tools.length} 个 MCP 工具`);
+      }
+    } catch (err) {
+      console.warn("MCP 工具加载跳过:", err);
+    }
 
     const agent = createAgent(
       personaConfig.prompt + dateContext + memoryContext,
@@ -179,109 +194,97 @@ export async function POST(request: NextRequest) {
       new HumanMessage(message),
     ];
 
-    // 流式输出
+    // ====== SSE 流式输出 ======
     const encoder = new TextEncoder();
     let fullReply = "";
-    let toolUsed = false;
+
+    /** SSE 发送辅助函数 */
+    const sendSSE = (
+      controller: ReadableStreamDefaultController,
+      data: Record<string, unknown>
+    ) => {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    };
 
     const readableStream = new ReadableStream({
       async start(controller) {
         try {
-          // 用 LangGraph 的 streamEvents 获取细粒度事件
           const eventStream = agent.streamEvents(
             { messages: inputMessages },
             { version: "v2" }
           );
 
-          // 记录是否在最终回答阶段（工具调用完成后）
-          let isToolCalling = false;
-          let lastAIContent = "";
+          let thinkingContent = "";
 
           for await (const event of eventStream) {
-            // 工具调用开始
+            // ── 工具调用开始 ──
             if (event.event === "on_tool_start") {
-              isToolCalling = true;
-              if (!toolUsed) {
-                controller.enqueue(
-                  encoder.encode("> 🔍 正在查询中...\n\n")
-                );
-                toolUsed = true;
+              if (thinkingContent) {
+                sendSSE(controller, { type: "thinking_end" });
+                thinkingContent = "";
               }
+              sendSSE(controller, {
+                type: "tool_start",
+                name: event.name,
+                input: event.data?.input || {},
+              });
               console.log(`🔧 调用工具: ${event.name}`, event.data?.input);
             }
 
-            // 工具调用结束
+            // ── 工具调用结束 ──
             if (event.event === "on_tool_end") {
               const output = event.data?.output;
-              // 提取 ToolMessage 的 content
               const resultText = output?.content
                 ? String(output.content)
                 : String(output);
-              console.log(
-                `📋 工具结果: ${resultText.slice(0, 300)}...`
-              );
-
-              // 联网搜索结果 → 提取来源展示给前端
-              if (event.name === "web_search" && resultText && !resultText.includes("没有找到结果")) {
-                const sources: string[] = [];
-                const lines = resultText.split("\n");
-                for (const line of lines) {
-                  const srcMatch = line.match(/^来源:\s*(.+)$/);
-                  if (srcMatch) {
-                    sources.push(srcMatch[1].trim());
-                  }
-                }
-                if (sources.length > 0) {
-                  const sourceText = `> 🌐 搜索来源：${sources.join("、")}\n\n`;
-                  controller.enqueue(encoder.encode(sourceText));
-                }
-              }
+              console.log(`📋 工具结果: ${resultText.slice(0, 300)}...`);
+              sendSSE(controller, {
+                type: "tool_end",
+                name: event.name,
+                result: resultText.slice(0, 800),
+              });
             }
 
-            // LLM 流式输出
+            // ── LLM 流式输出 ──
             if (event.event === "on_chat_model_stream") {
               const chunk = event.data?.chunk;
               if (chunk) {
+                // DeepSeek 思考链 (reasoning_content)
+                const reasoning =
+                  chunk.additional_kwargs?.reasoning_content ||
+                  chunk.additional_kwargs?.reasoning ||
+                  "";
+                if (reasoning) {
+                  thinkingContent += reasoning;
+                  sendSSE(controller, { type: "thinking", content: reasoning });
+                }
+                // 正式回答内容
                 const content =
                   typeof chunk.content === "string" ? chunk.content : "";
                 if (content) {
-                  lastAIContent += content;
+                  fullReply += content;
+                  sendSSE(controller, { type: "content", content });
                 }
               }
             }
 
-            // LLM 回复结束（每轮）
+            // ── LLM 回复结束（每轮） ──
             if (event.event === "on_chat_model_end") {
-              // 如果不是工具调用轮（最终回答），把内容推给前端
-              const output = event.data?.output;
-              const hasToolCalls =
-                output?.tool_calls && output.tool_calls.length > 0;
-
-              if (!hasToolCalls && lastAIContent) {
-                fullReply = lastAIContent;
-                // 分段发送模拟流式
-                const chunkSize = 5;
-                for (let i = 0; i < lastAIContent.length; i += chunkSize) {
-                  controller.enqueue(
-                    encoder.encode(lastAIContent.slice(i, i + chunkSize))
-                  );
-                }
+              if (thinkingContent) {
+                sendSSE(controller, { type: "thinking_end" });
+                thinkingContent = "";
               }
-
-              if (hasToolCalls) {
-                isToolCalling = true;
-              }
-
-              // 重置，准备下一轮
-              lastAIContent = "";
             }
           }
 
-          // 如果事件流里没捕获到最终回复（兜底）
-          if (!fullReply && !isToolCalling) {
+          // 兜底：如果没生成回复
+          if (!fullReply) {
             fullReply = "[AI 未生成回复]";
-            controller.enqueue(encoder.encode(fullReply));
+            sendSSE(controller, { type: "content", content: fullReply });
           }
+
+          // 完成标记
+          sendSSE(controller, { type: "done" });
 
           // 存入数据库
           await addMessage(sessionId, "assistant", fullReply);
@@ -307,8 +310,13 @@ export async function POST(request: NextRequest) {
           ).catch((err) => console.warn("记忆提取失败:", err));
         } catch (error) {
           console.error("Stream error:", error);
-          controller.enqueue(encoder.encode("\n[生成出错]"));
+          sendSSE(controller, { type: "error", content: "生成出错" });
         } finally {
+          if (mcpCleanup) {
+            mcpCleanup().catch((err) =>
+              console.warn("MCP cleanup error:", err)
+            );
+          }
           controller.close();
         }
       },
@@ -316,7 +324,7 @@ export async function POST(request: NextRequest) {
 
     return new Response(readableStream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       },

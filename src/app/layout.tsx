@@ -25,15 +25,19 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // 服务端验证 session cookie（查数据库，防伪造）
-  const cookieStore = await cookies();
-  const sessionToken =
-    cookieStore.get("__Secure-authjs.session-token")?.value ||
-    cookieStore.get("authjs.session-token")?.value;
+  // 本地开发跳过认证，生产环境查数据库验证 session
+  const isDev = process.env.NODE_ENV === "development";
 
-  if (!sessionToken || !(await verifySession(sessionToken))) {
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "/chat";
-    redirect(`/login?callbackUrl=${encodeURIComponent(basePath)}`);
+  if (!isDev) {
+    const cookieStore = await cookies();
+    const sessionToken =
+      cookieStore.get("__Secure-authjs.session-token")?.value ||
+      cookieStore.get("authjs.session-token")?.value;
+
+    if (!sessionToken || !(await verifySession(sessionToken))) {
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "/chat";
+      redirect(`/login?callbackUrl=${encodeURIComponent(basePath)}`);
+    }
   }
 
   return (

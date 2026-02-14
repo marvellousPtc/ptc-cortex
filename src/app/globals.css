@@ -187,3 +187,101 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
   background: #8b5cf6; cursor: pointer; border: 2px solid var(--c-modal);
 }
+
+/* ====== Thinking Block ====== */
+.thinking-block {
+  position: relative;
+  background: linear-gradient(135deg, var(--c-accent-soft), transparent);
+}
+.thinking-block::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--c-accent-border), transparent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.thinking-content {
+  max-height: 300px;
+  overflow-y: auto;
+  animation: fadeSlideIn 0.2s ease-out;
+}
+
+/* ====== Tool Call Card ====== */
+.tool-call-card {
+  transition: all 0.2s ease;
+}
+.tool-call-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+[data-theme="dark"] .tool-call-card:hover {
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.02);
+}
+.tool-detail-content {
+  animation: fadeSlideIn 0.15s ease-out;
+}
+
+/* ====== Collapsible transitions ====== */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--c-accent-soft) 25%,
+    var(--c-accent-border) 50%,
+    var(--c-accent-soft) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ====== Loading dots animation ====== */
+.loading-dots::after {
+  content: "";
+  animation: dots 1.5s steps(4, end) infinite;
+}
+@keyframes dots {
+  0%, 20% { content: ""; }
+  40% { content: "."; }
+  60% { content: ".."; }
+  80%, 100% { content: "..."; }
+}
+
+/* ====== MCP Marketplace Card ====== */
+.mcp-preset-card {
+  transition: all 0.2s ease;
+}
+.mcp-preset-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+[data-theme="dark"] .mcp-preset-card:hover {
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.03);
+}
+
+/* ====== Tab active indicator ====== */
+.tab-active {
+  position: relative;
+}
+.tab-active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #7c3aed, #3b82f6);
+  border-radius: 1px;
+}
