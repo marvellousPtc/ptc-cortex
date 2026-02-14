@@ -71,8 +71,26 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+          command_timeout: 10m
           script: |
             PROJECT_PATH="${{ secrets.CORTEX_PROJECT_PATH || '/ptc/ptc-cortex' }}"
+
+            # ====== 确保有 swap（小内存服务器必备）======
+            if [ ! -f /swapfile ]; then
+              echo "📦 创建 2G swap..."
+              sudo fallocate -l 2G /swapfile
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+            fi
+            # 确保 swap 已启用
+            sudo swapon /swapfile 2>/dev/null || true
+
+            # ====== 先停掉 ptc-cortex 释放内存 ======
+            if pm2 describe ptc-cortex > /dev/null 2>&1; then
+              pm2 stop ptc-cortex
+            fi
 
             # 备份 .env.local（含 API 密钥，不能丢）
             if [ -f "$PROJECT_PATH/.env.local" ]; then
@@ -81,18 +99,18 @@ jobs:
 
             # 备份 data 目录（SQLite 数据库，必须持久化）
             if [ -d "$PROJECT_PATH/data" ]; then
-              cp -r "$PROJECT_PATH/data" /tmp/langchain-data-backup
+              cp -r "$PROJECT_PATH/data" /tmp/cortex-data-backup
             fi
 
             # 备份上传文件目录
             if [ -d "$PROJECT_PATH/public/uploads" ]; then
-              cp -r "$PROJECT_PATH/public/uploads" /tmp/langchain-uploads-backup
+              cp -r "$PROJECT_PATH/public/uploads" /tmp/cortex-uploads-backup
             fi
 
             # 确保目标目录存在
             mkdir -p "$PROJECT_PATH"
 
-            # 清空目标目录（保留隐藏文件夹如 .next 之外的）
+            # 清空目标目录
             rm -rf "$PROJECT_PATH"/*
             rm -rf "$PROJECT_PATH"/.[!.]*
 
@@ -105,15 +123,15 @@ jobs:
             fi
 
             # 恢复 data 目录（SQLite 数据库）
-            if [ -d "/tmp/langchain-data-backup" ]; then
+            if [ -d "/tmp/cortex-data-backup" ]; then
               rm -rf "$PROJECT_PATH/data"
-              mv /tmp/langchain-data-backup "$PROJECT_PATH/data"
+              mv /tmp/cortex-data-backup "$PROJECT_PATH/data"
             fi
 
             # 恢复上传文件
-            if [ -d "/tmp/langchain-uploads-backup" ]; then
+            if [ -d "/tmp/cortex-uploads-backup" ]; then
               rm -rf "$PROJECT_PATH/public/uploads"
-              mv /tmp/langchain-uploads-backup "$PROJECT_PATH/public/uploads"
+              mv /tmp/cortex-uploads-backup "$PROJECT_PATH/public/uploads"
             fi
 
             # 清理临时文件
@@ -121,8 +139,8 @@ jobs:
 
             cd "$PROJECT_PATH"
 
-            # 安装依赖（含 better-sqlite3 原生编译）
-            pnpm install --prod
+            # 安装依赖（限制内存，防止 OOM）
+            NODE_OPTIONS="--max-old-space-size=512" pnpm install --prod
 
             # 重新编译原生模块（确保和服务器架构匹配）
             pnpm rebuild better-sqlite3
