@@ -525,6 +525,11 @@ export default function Home() {
             <h1 className="text-sm font-medium truncate">{currentSession ? currentSession.title : "PTC Cortex"}</h1>
             {currentPersona && <p className="text-xs text-ink-muted truncate">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
           </div>
+          {/* Back to blog */}
+          <a href="/" className="btn-press shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs text-ink-muted hover:text-ink bg-card hover:bg-card-hover border border-line transition-all hover:shadow-sm" title="返回文章阅读">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            返回文章
+          </a>
           {/* Theme toggle */}
           <button onClick={toggleTheme} className="btn-press shrink-0 rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all" title={theme === "light" ? "切换暗色" : "切换亮色"}>
             {theme === "light" ? MoonIcon : SunIcon}
@@ -633,19 +638,19 @@ export default function Home() {
                                   <div className="tool-detail-content px-3 pb-2.5 text-xs border-t" style={{ borderColor: "var(--c-line)" }}>
                                     {Object.keys(tc.input).length > 0 && (
                                       <div className="mt-1.5">
-                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">Input</span>
+                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">输入参数</span>
                                         <pre className="text-ink-muted mt-0.5 whitespace-pre-wrap break-all leading-relaxed" style={{ maxHeight: "120px", overflowY: "auto" }}>{JSON.stringify(tc.input, null, 2)}</pre>
                                       </div>
                                     )}
                                     {tc.result && (
                                       <div className="mt-2">
-                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">Output</span>
+                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">输出结果</span>
                                         <pre className="text-ink-muted mt-0.5 whitespace-pre-wrap break-all leading-relaxed" style={{ maxHeight: "150px", overflowY: "auto" }}>{tc.result}</pre>
                                       </div>
                                     )}
                                     {!tc.isComplete && !tc.result && (
                                       <div className="mt-1.5 text-ink-faint">
-                                        <span className="loading-dots">执行中</span>
+                                        <span className="loading-dots">工具执行中</span>
                                       </div>
                                     )}
                                   </div>
@@ -689,16 +694,17 @@ export default function Home() {
             )}
 
             {loading && messages[messages.length - 1]?.role !== "assistant" && (
-              <div className="flex gap-3">
+              <div className="flex gap-3 items-start">
                 <div className="w-8 h-8 rounded-lg border border-line flex items-center justify-center text-sm" style={{ background: `linear-gradient(135deg, var(--c-ai-avatar-from), var(--c-ai-avatar-to))` }}>
                   {currentPersona?.emoji || "✨"}
                 </div>
-                <div className="rounded-2xl border px-4 py-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)" }}>
-                  <div className="flex space-x-1.5">
-                    <div className="h-2 w-2 rounded-full animate-bounce [animation-delay:-0.3s]" style={{ background: "var(--c-loading-dot)" }}></div>
-                    <div className="h-2 w-2 rounded-full animate-bounce [animation-delay:-0.15s]" style={{ background: "var(--c-loading-dot)" }}></div>
-                    <div className="h-2 w-2 rounded-full animate-bounce" style={{ background: "var(--c-loading-dot)" }}></div>
+                <div className="rounded-2xl border px-4 py-3 flex items-center gap-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)" }}>
+                  <div className="typing-wave flex items-center gap-[3px]">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
                   </div>
+                  <span className="text-xs text-ink-muted">正在思考<span className="loading-dots"></span></span>
                 </div>
               </div>
             )}
