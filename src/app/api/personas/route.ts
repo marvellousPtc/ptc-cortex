@@ -7,7 +7,7 @@ import {
 
 /** GET /api/personas → 获取所有自定义角色 */
 export async function GET() {
-  const personas = getAllCustomPersonas();
+  const personas = await getAllCustomPersonas();
   return NextResponse.json({ personas });
 }
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!name || !prompt) {
     return NextResponse.json({ error: "名称和提示词为必填" }, { status: 400 });
   }
-  const persona = createCustomPersona(
+  const persona = await createCustomPersona(
     name,
     emoji || "🤖",
     description || "",
@@ -34,6 +34,6 @@ export async function DELETE(request: NextRequest) {
   if (!id) {
     return NextResponse.json({ error: "缺少 id" }, { status: 400 });
   }
-  deleteCustomPersona(id);
+  await deleteCustomPersona(id);
   return NextResponse.json({ success: true });
 }

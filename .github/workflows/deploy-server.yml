@@ -33,8 +33,6 @@ jobs:
         env:
           # 构建时需要 basePath
           NEXT_PUBLIC_BASE_PATH: /chat
-          # better-sqlite3 在 CI 里编译可能架构不同，
-          # 但 Next.js build 只做代码打包，运行时在服务器上 rebuild
           DEEPSEEK_API_KEY: placeholder
           DEEPSEEK_BASE_URL: https://api.deepseek.com
 
@@ -97,11 +95,6 @@ jobs:
               cp "$PROJECT_PATH/.env.local" /tmp/.env.local.backup
             fi
 
-            # 备份 data 目录（SQLite 数据库，必须持久化）
-            if [ -d "$PROJECT_PATH/data" ]; then
-              cp -r "$PROJECT_PATH/data" /tmp/cortex-data-backup
-            fi
-
             # 备份上传文件目录
             if [ -d "$PROJECT_PATH/public/uploads" ]; then
               cp -r "$PROJECT_PATH/public/uploads" /tmp/cortex-uploads-backup
@@ -122,12 +115,6 @@ jobs:
               mv /tmp/.env.local.backup "$PROJECT_PATH/.env.local"
             fi
 
-            # 恢复 data 目录（SQLite 数据库）
-            if [ -d "/tmp/cortex-data-backup" ]; then
-              rm -rf "$PROJECT_PATH/data"
-              mv /tmp/cortex-data-backup "$PROJECT_PATH/data"
-            fi
-
             # 恢复上传文件
             if [ -d "/tmp/cortex-uploads-backup" ]; then
               rm -rf "$PROJECT_PATH/public/uploads"
@@ -141,9 +128,6 @@ jobs:
 
             # 安装依赖（限制内存，防止 OOM）
             NODE_OPTIONS="--max-old-space-size=512" pnpm install --prod
-
-            # 重新编译原生模块（确保和服务器架构匹配）
-            pnpm rebuild better-sqlite3
 
             # 重启 PM2
             if pm2 describe ptc-cortex > /dev/null 2>&1; then

@@ -15,7 +15,6 @@
     "@langchain/langgraph": "^1.1.4",
     "@langchain/openai": "^1.2.7",
     "@langchain/textsplitters": "^1.0.1",
-    "better-sqlite3": "^12.6.2",
     "langchain": "^1.2.21",
     "next": "16.1.6",
     "pdf-parse": "^2.4.5",
@@ -28,14 +27,8 @@
     "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3"
-    ]
-  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
     "@types/react": "^19",

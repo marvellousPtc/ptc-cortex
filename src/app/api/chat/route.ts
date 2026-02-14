@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session) {
       return new Response(
         JSON.stringify({ error: "会话不存在" }),
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     // 查找角色配置：先查内置，再查自定义
     let personaConfig = PERSONAS[session.persona];
     if (!personaConfig) {
-      const custom = getCustomPersona(session.persona);
+      const custom = await getCustomPersona(session.persona);
       if (custom) {
         personaConfig = {
           name: custom.name,
@@ -130,11 +130,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const historyMessages = getRecentMessages(sessionId, 20);
-    addMessage(sessionId, "user", message);
+    const historyMessages = await getRecentMessages(sessionId, 20);
+    await addMessage(sessionId, "user", message);
 
     // ====== 长期记忆：搜索相关记忆注入 prompt ======
-    const relatedMemories = searchMemories(message, 5);
+    const relatedMemories = await searchMemories(message, 5);
     const memoryContext = formatMemoriesForPrompt(relatedMemories);
 
     // ====== LangGraph Agent ======
@@ -275,12 +275,12 @@ export async function POST(request: NextRequest) {
           }
 
           // 存入数据库
-          addMessage(sessionId, "assistant", fullReply);
+          await addMessage(sessionId, "assistant", fullReply);
 
           if (session.title === "新对话" && fullReply.length > 0) {
             const title =
               fullReply.replace(/[#*\n]/g, "").slice(0, 20) + "...";
-            updateSessionTitle(sessionId, title);
+            await updateSessionTitle(sessionId, title);
           }
 
           // ====== 长期记忆：异步提取关键信息 ======
@@ -378,7 +378,7 @@ async function extractAndSaveMemory(
         const importance = parts[1].trim() === "high" ? "high" : "normal";
         const memoryContent = parts[2].trim();
         if (memoryContent.length > 5) {
-          saveMemory(sessionId, memoryContent, keywords, importance);
+          await saveMemory(sessionId, memoryContent, keywords, importance);
         }
       }
     }

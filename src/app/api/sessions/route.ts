@@ -22,19 +22,19 @@ export async function GET(request: NextRequest) {
 
   if (id) {
     // 获取某个会话的所有消息
-    const messages = getMessages(id);
+    const messages = await getMessages(id);
     return NextResponse.json({ messages });
   }
 
   // 获取所有会话
-  const sessions = getAllSessions();
+  const sessions = await getAllSessions();
   return NextResponse.json({ sessions });
 }
 
 // 创建新会话
 export async function POST(request: NextRequest) {
   const { persona = "assistant" } = await request.json();
-  const session = createSession(persona);
+  const session = await createSession(persona);
   return NextResponse.json({ session });
 }
 
@@ -47,6 +47,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
 
-  deleteSession(id);
+  await deleteSession(id);
   return NextResponse.json({ success: true });
 }

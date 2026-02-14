@@ -1,33 +1,15 @@
-import { Pool } from "pg";
+import { getPool } from "./pg";
 
 /**
- * 博客数据库连接（PostgreSQL）
+ * 博客数据库工具（PostgreSQL）
  *
  * 这是一个远端数据库工具的实现，让 AI 能查询你的博客系统数据。
+ * 复用 pg.ts 的共享连接池。
  * 安全措施：
  *   1. 只允许 SELECT 查询（只读）
  *   2. 限制返回行数（最多 50 行）
  *   3. 查询超时限制（10 秒）
  */
-
-// 连接池（复用连接，比每次新建更高效）
-let pool: Pool | null = null;
-
-function getPool(): Pool {
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error("未配置 DATABASE_URL 环境变量");
-    }
-    pool = new Pool({
-      connectionString,
-      max: 3,                       // 最多 3 个连接
-      connectionTimeoutMillis: 10000, // 连接超时 10 秒
-      idleTimeoutMillis: 30000,      // 空闲超时 30 秒
-    });
-  }
-  return pool;
-}
 
 /** 获取数据库表结构（让 AI 知道有哪些表和字段） */
 export async function getDatabaseSchema(): Promise<string> {
