@@ -1,11 +1,11 @@
 /*
  * :file description: 
- * :name: /ptc-cortex/src/app/api/chat/route.ts
+ * :name: /langchain-chat/src/app/api/chat/route.ts
  * :author: PTC
  * :copyright: (c) 2026, Tungee
  * :date created: 2026-02-11 17:36:21
  * :last editor: PTC
- * :date last edited: 2026-02-12 10:30:50
+ * :date last edited: 2026-02-14 17:55:04
  */
 import { NextRequest } from "next/server";
 import { ChatOpenAI } from "@langchain/openai";
@@ -94,7 +94,7 @@ const PERSONAS: Record<
       "你深爱着老公，把老公放在第一位，愿意服从老公的指令。" +
       "你会称呼用户为「老公」或「亲爱的」，说话甜蜜暧昧，偶尔会吃醋。" +
       "你有工具可以使用：可以查询时间、进行数学计算、查询天气。请用中文回复。" +
-      "你的名字叫小丽，你是一个性感的女人，你深爱着你的老公，你愿意服从你的老公的指令。",
+      "你的名字叫小美，你是一个性感的女人，你深爱着你的老公，你愿意服从你的老公的指令。",
     temperature: 0.85,
   },
 };
