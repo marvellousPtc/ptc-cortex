@@ -56,7 +56,8 @@ export async function parseFile(filePath: string): Promise<string> {
 
 /** 解析 PDF */
 async function parsePDF(filePath: string): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
+  // pdf-parse v2 ESM 导出结构与 TS 类型声明不一致，用 any 绕过
+  const pdfParse = ((await import("pdf-parse")) as unknown as { default: (buf: Buffer) => Promise<{ text: string; numpages: number }> }).default;
   const buffer = fs.readFileSync(filePath);
   const data = await pdfParse(buffer);
 
