@@ -659,7 +659,11 @@ export default function Home() {
                       {/* ── Content ── */}
                       {msg.content && (
                         <div className="rounded-2xl border px-4 py-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)", boxShadow: "var(--c-shadow)" }}>
-                          <div className="markdown-body text-sm leading-relaxed"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</ReactMarkdown></div>
+                          <div className="markdown-body text-sm leading-relaxed"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+                                              img: ({ src, alt }) => (
+                                                <img src={src} alt={alt || ''} className="rounded-lg max-w-full max-h-[400px] object-contain my-2" />
+                                              )
+                                            }}>{msg.content}</ReactMarkdown></div>
                         </div>
                       )}
                     </div>

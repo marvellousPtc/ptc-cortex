@@ -215,6 +215,7 @@ export async function POST(request: NextRequest) {
           );
 
           let thinkingContent = "";
+          const collectedImages: string[] = [];
 
           for await (const event of eventStream) {
             // ── 工具调用开始 ──
@@ -238,10 +239,15 @@ export async function POST(request: NextRequest) {
                 ? String(output.content)
                 : String(output);
               console.log(`📋 工具结果: ${resultText.slice(0, 300)}...`);
+              // 收集图片 markdown，用于追加到最终回复中
+              const imgMatch = resultText.match(/!\[.*?\]\(https?:\/\/[^)]+\)/);
+              if (imgMatch) {
+                collectedImages.push(imgMatch[0]);
+              }
               sendSSE(controller, {
                 type: "tool_end",
                 name: event.name,
-                result: resultText.slice(0, 800),
+                result: resultText.slice(0, 2000),
               });
             }
 
@@ -281,6 +287,13 @@ export async function POST(request: NextRequest) {
           if (!fullReply) {
             fullReply = "[AI 未生成回复]";
             sendSSE(controller, { type: "content", content: fullReply });
+          }
+
+          // 将工具生成的图片追加到回复末尾，确保持久化到数据库
+          if (collectedImages.length > 0) {
+            const imageSection = "\n\n" + collectedImages.join("\n\n");
+            fullReply += imageSection;
+            sendSSE(controller, { type: "content", content: imageSection });
           }
 
           // 完成标记
