@@ -1,12 +1,3 @@
-/*
- * :file description: 
- * :name: /langchain-chat/src/app/page.tsx
- * :author: PTC
- * :copyright: (c) 2026, Tungee
- * :date created: 2026-02-11 17:09:08
- * :last editor: PTC
- * :date last edited: 2026-02-12 14:23:31
- */
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -14,39 +5,25 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+/* ====== Types ====== */
+interface Message { role: "user" | "assistant"; content: string; }
+interface Session { id: string; title: string; persona: string; created_at: string; updated_at: string; }
+interface CustomPersona { id: string; name: string; emoji: string; description: string; prompt: string; temperature: number; }
+interface AnalysisResult { summary: string; sentiment: "positive" | "negative" | "neutral" | "mixed"; sentimentScore: number; keywords: string[]; category: string; language: string; wordCount: number; readingTime: string; }
 
-interface Session {
-  id: string;
-  title: string;
-  persona: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface AnalysisResult {
-  summary: string;
-  sentiment: "positive" | "negative" | "neutral" | "mixed";
-  sentimentScore: number;
-  keywords: string[];
-  category: string;
-  language: string;
-  wordCount: number;
-  readingTime: string;
-}
-
-const PERSONAS = [
-  { id: "assistant", name: "🤖 通用助手", desc: "友好简洁，有问必答" },
-  { id: "cat", name: "🐱 猫娘小喵", desc: "可爱撒娇，句尾带喵~" },
-  { id: "coder", name: "💻 编程导师", desc: "代码示例，通俗易懂" },
-  { id: "poet", name: "🎭 文艺诗人", desc: "诗意表达，富有哲理" },
-  { id: "wife", name: "💕 老婆小美", desc: "性感妩媚，甜蜜撒娇" },
+const BUILTIN_PERSONAS = [
+  { id: "assistant", name: "通用助手", emoji: "✨", desc: "友好简洁，有问必答" },
+  { id: "cat", name: "猫娘小喵", emoji: "🐱", desc: "可爱撒娇，句尾带喵~" },
+  { id: "coder", name: "编程导师", emoji: "💻", desc: "代码示例，通俗易懂" },
+  { id: "poet", name: "文艺诗人", emoji: "🎭", desc: "诗意表达，富有哲理" },
+  { id: "wife", name: "老婆小美", emoji: "💕", desc: "性感妩媚，甜蜜撒娇" },
 ];
 
+// basePath：部署时通过 NEXT_PUBLIC_BASE_PATH 环境变量设置（如 /chat），本地开发为空
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 export default function Home() {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,6 +31,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [customPersonas, setCustomPersonas] = useState<CustomPersona[]>([]);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [newPersona, setNewPersona] = useState({ name: "", emoji: "🤖", description: "", prompt: "", temperature: 0.7 });
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [analyzeText, setAnalyzeText] = useState("");
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
@@ -61,579 +42,453 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 加载会话列表
-  const loadSessions = useCallback(async () => {
-    const res = await fetch("/api/sessions");
-    const data = await res.json();
-    setSessions(data.sessions);
+  /* ====== Theme ====== */
+  useEffect(() => {
+    const saved = localStorage.getItem("theme") as "light" | "dark" | null;
+    if (saved) setTheme(saved);
+    else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
   }, []);
 
-  // 加载某个会话的消息
-  const loadMessages = useCallback(async (sessionId: string) => {
-    const res = await fetch(`/api/sessions?id=${sessionId}`);
-    const data = await res.json();
-    setMessages(
-      data.messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      }))
-    );
-  }, []);
+  const toggleTheme = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    localStorage.setItem("theme", next);
+  };
 
-  // 初始化：加载会话列表
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  /* ====== Data loading ====== */
+  const loadSessions = useCallback(async () => { const res = await fetch(`${BASE}/api/sessions`); const data = await res.json(); setSessions(data.sessions); }, []);
+  const loadMessages = useCallback(async (sid: string) => { const res = await fetch(`${BASE}/api/sessions?id=${sid}`); const data = await res.json(); setMessages(data.messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }))); }, []);
+  const loadCustomPersonas = useCallback(async () => { const res = await fetch(`${BASE}/api/personas`); const data = await res.json(); setCustomPersonas(data.personas); }, []);
 
-  // 切换会话时加载消息
-  useEffect(() => {
-    if (currentSessionId) {
-      loadMessages(currentSessionId);
-    }
-  }, [currentSessionId, loadMessages]);
+  useEffect(() => { loadSessions(); loadCustomPersonas(); }, [loadSessions, loadCustomPersonas]);
+  useEffect(() => { if (currentSessionId) loadMessages(currentSessionId); }, [currentSessionId, loadMessages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const allPersonas = [
+    ...BUILTIN_PERSONAS.map((p) => ({ ...p, isBuiltin: true })),
+    ...customPersonas.map((p) => ({ id: p.id, name: p.name, emoji: p.emoji, desc: p.description, isBuiltin: false })),
+  ];
 
-  // 创建新会话
+  /* ====== Actions ====== */
   const createNewSession = async (persona: string = "assistant") => {
-    const res = await fetch("/api/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ persona }),
-    });
+    const res = await fetch(`${BASE}/api/sessions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ persona }) });
     const data = await res.json();
     setSessions((prev) => [data.session, ...prev]);
     setCurrentSessionId(data.session.id);
     setMessages([]);
+    setPersonaPickerOpen(false);
   };
 
-  // 删除会话
   const deleteSessionById = async (id: string) => {
-    await fetch(`/api/sessions?id=${id}`, { method: "DELETE" });
+    await fetch(`${BASE}/api/sessions?id=${id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (currentSessionId === id) {
-      setCurrentSessionId(null);
-      setMessages([]);
-    }
+    if (currentSessionId === id) { setCurrentSessionId(null); setMessages([]); }
   };
 
-  // 发送消息
+  const handleCreatePersona = async () => {
+    if (!newPersona.name.trim() || !newPersona.prompt.trim()) return;
+    const res = await fetch(`${BASE}/api/personas`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newPersona) });
+    const data = await res.json();
+    if (data.persona) { setCustomPersonas((prev) => [data.persona, ...prev]); setNewPersona({ name: "", emoji: "🤖", description: "", prompt: "", temperature: 0.7 }); setPersonaModalOpen(false); }
+  };
+
+  const handleDeletePersona = async (id: string) => {
+    await fetch(`${BASE}/api/personas?id=${id}`, { method: "DELETE" });
+    setCustomPersonas((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || loading || !currentSessionId) return;
-
     const userMessage: Message = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInput("");
-    setLoading(true);
-
+    setMessages(newMessages); setInput(""); setLoading(true);
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage.content,
-          sessionId: currentSessionId,
-          webSearchEnabled,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setMessages([
-          ...newMessages,
-          { role: "assistant", content: `❌ 错误: ${data.error}` },
-        ]);
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
+      const response = await fetch(`${BASE}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userMessage.content, sessionId: currentSessionId, webSearchEnabled }) });
+      if (!response.ok) { const data = await response.json(); setMessages([...newMessages, { role: "assistant", content: `错误: ${data.error}` }]); return; }
+      const reader = response.body?.getReader(); const decoder = new TextDecoder();
       if (!reader) throw new Error("无法获取响应流");
-
-      const aiMessageIndex = newMessages.length;
+      const aiIdx = newMessages.length;
       setMessages([...newMessages, { role: "assistant", content: "" }]);
-
-      let fullContent = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value, { stream: true });
-        fullContent += text;
-
-        const updatedContent = fullContent;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[aiMessageIndex] = {
-            role: "assistant",
-            content: updatedContent,
-          };
-          return updated;
-        });
-      }
-
-      // 聊天结束后刷新会话列表（标题可能更新了）
+      let full = "";
+      while (true) { const { done, value } = await reader.read(); if (done) break; full += decoder.decode(value, { stream: true }); const c = full; setMessages((prev) => { const u = [...prev]; u[aiIdx] = { role: "assistant", content: c }; return u; }); }
       loadSessions();
-    } catch {
-      setMessages((prev) => [
-        ...prev.filter((m) => m.content !== ""),
-        { role: "assistant", content: "❌ 网络错误，请检查服务是否正常运行" },
-      ]);
-    } finally {
-      setLoading(false);
-    }
+    } catch { setMessages((prev) => [...prev.filter((m) => m.content !== ""), { role: "assistant", content: "网络错误，请检查服务是否正常运行" }]); }
+    finally { setLoading(false); }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
 
-  // 上传文件（图片/文档）
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentSessionId) return;
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (data.url) {
-        const isImage = file.type.startsWith("image/");
-        if (isImage) {
-          // 图片：把 URL 告诉 AI，让它调用 analyze_image 工具
-          setInput(`请分析这张图片: ${window.location.origin}${data.url}`);
-        } else {
-          // 文档：把 URL 告诉 AI，让它调用 parse_file 工具
-          setInput(`请解析这个文件: ${data.filename} (路径: ${data.url})`);
-        }
-      }
-    } catch {
-      alert("文件上传失败");
-    }
-    // 重置 input 允许重复上传同一文件
-    e.target.value = "";
+    const file = e.target.files?.[0]; if (!file || !currentSessionId) return;
+    const fd = new FormData(); fd.append("file", file);
+    try { const res = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd }); const data = await res.json(); if (data.url) { setInput(file.type.startsWith("image/") ? `请分析这张图片: ${window.location.origin}${BASE}${data.url}` : `请解析这个文件: ${data.filename} (路径: ${data.url})`); } }
+    catch { alert("文件上传失败"); } e.target.value = "";
   };
 
-  // 文本分析
   const handleAnalyze = async () => {
     if (!analyzeText.trim() || analyzeLoading) return;
-    setAnalyzeLoading(true);
-    setAnalysisResult(null);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: analyzeText.trim() }),
-      });
-      const data = await res.json();
-      if (data.analysis) {
-        setAnalysisResult(data.analysis);
-      } else {
-        alert(data.error || "分析失败");
-      }
-    } catch {
-      alert("网络错误");
-    } finally {
-      setAnalyzeLoading(false);
-    }
+    setAnalyzeLoading(true); setAnalysisResult(null);
+    try { const res = await fetch(`${BASE}/api/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: analyzeText.trim() }) }); const data = await res.json(); if (data.analysis) setAnalysisResult(data.analysis); else alert(data.error || "分析失败"); }
+    catch { alert("网络错误"); } finally { setAnalyzeLoading(false); }
   };
 
-  const sentimentMap: Record<string, { label: string; color: string; emoji: string }> = {
-    positive: { label: "积极", color: "text-green-600 bg-green-50", emoji: "😊" },
-    negative: { label: "消极", color: "text-red-600 bg-red-50", emoji: "😟" },
-    neutral: { label: "中性", color: "text-gray-600 bg-gray-100", emoji: "😐" },
-    mixed: { label: "混合", color: "text-yellow-600 bg-yellow-50", emoji: "🤔" },
+  const sentimentMap: Record<string, { label: string; emoji: string }> = {
+    positive: { label: "积极", emoji: "😊" }, negative: { label: "消极", emoji: "😟" },
+    neutral: { label: "中性", emoji: "😐" }, mixed: { label: "混合", emoji: "🤔" },
   };
-
-  const categoryMap: Record<string, string> = {
-    technology: "科技", business: "商业", life: "生活",
-    education: "教育", news: "新闻", opinion: "观点", other: "其他",
-  };
+  const categoryMap: Record<string, string> = { technology: "科技", business: "商业", life: "生活", education: "教育", news: "新闻", opinion: "观点", other: "其他" };
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
-  const currentPersona = PERSONAS.find(
-    (p) => p.id === (currentSession?.persona || "assistant")
-  );
+  const currentPersona = allPersonas.find((p) => p.id === (currentSession?.persona || "assistant"));
+
+  /* ====== Icons (inline SVG helpers) ====== */
+  const SunIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
+  const MoonIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>;
+  const PlusIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
+  const TrashIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
+  const CloseIcon = <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
+  const GlobeIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>;
+  const ClipIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
+  const SendIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* ===== 左侧边栏：会话列表 ===== */}
-      <aside
-        className={`${
-          sidebarOpen ? "w-64" : "w-0"
-        } shrink-0 overflow-hidden transition-all duration-200 border-r bg-white`}
-      >
-        <div className="flex h-full w-64 flex-col">
-          {/* 新建会话按钮 */}
-          <div className="p-3 border-b">
+    <div data-theme={theme} className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-300">
+
+      {/* ===== Sidebar ===== */}
+      <aside className={`${sidebarOpen ? "w-72" : "w-0"} shrink-0 overflow-hidden transition-all duration-300`}>
+        <div className="flex h-full w-72 flex-col bg-panel border-r border-line">
+          {/* Logo + New Chat */}
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-violet-500 to-blue-500 flex items-center justify-center text-sm font-bold text-white">AI</div>
+              <span className="text-sm font-semibold">LangChain Chat</span>
+            </div>
             <button
-              onClick={() => createNewSession()}
-              className="w-full rounded-lg border border-dashed border-gray-300 px-4 py-2.5 text-sm text-gray-600 hover:border-blue-400 hover:text-blue-500 transition-colors"
+              onClick={() => setPersonaPickerOpen(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-card hover:bg-card-hover border border-line px-4 py-2.5 text-sm text-ink-secondary hover:text-ink transition-all"
             >
-              + 新建对话
+              {PlusIcon} 新建对话
             </button>
           </div>
 
-          {/* 会话列表 */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {sessions.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-8">
-                还没有对话，点击上方按钮开始
-              </p>
-            )}
+          {/* Session List */}
+          <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
+            {sessions.length === 0 && <p className="text-xs text-ink-faint text-center py-10">暂无对话</p>}
             {sessions.map((session) => {
-              const persona = PERSONAS.find((p) => p.id === session.persona);
+              const persona = allPersonas.find((p) => p.id === session.persona);
+              const isActive = currentSessionId === session.id;
               return (
-                <div
-                  key={session.id}
-                  className={`group flex items-center rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors ${
-                    currentSessionId === session.id
-                      ? "bg-blue-50 text-blue-700"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
+                <div key={session.id}
+                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm cursor-pointer transition-all ${isActive ? "bg-accent-soft text-accent-text font-medium" : "text-ink-secondary hover:bg-card-hover hover:text-ink"}`}
                   onClick={() => setCurrentSessionId(session.id)}
                 >
-                  <span className="mr-2 text-base">
-                    {persona?.name.charAt(0) || "🤖"}
-                  </span>
-                  <span className="flex-1 truncate">{session.title}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteSessionById(session.id);
-                    }}
-                    className="hidden group-hover:block ml-1 text-gray-400 hover:text-red-500 text-xs"
-                    title="删除"
-                  >
-                    ✕
+                  <span className="text-base shrink-0">{persona?.emoji || "✨"}</span>
+                  <span className="flex-1 truncate text-[13px]">{session.title}</span>
+                  <button onClick={(e) => { e.stopPropagation(); deleteSessionById(session.id); }}
+                    className="opacity-0 group-hover:opacity-100 shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ink-muted hover:text-red-500 hover:bg-red-500/10 transition-all">
+                    {TrashIcon}
                   </button>
                 </div>
               );
             })}
           </div>
 
-          {/* 人设快捷入口 */}
-          <div className="border-t p-3">
-            <p className="text-xs text-gray-400 mb-2">快速创建</p>
-            <div className="flex flex-wrap gap-1">
-              {PERSONAS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => createNewSession(p.id)}
-                  className="rounded-full px-2 py-1 text-xs bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                  title={p.desc}
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
+          {/* Bottom */}
+          <div className="p-3 border-t border-line">
+            <button onClick={() => setPersonaModalOpen(true)}
+              className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-all">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+              管理角色
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* ===== 右侧主区域 ===== */}
-      <div className="flex flex-1 flex-col">
-        {/* 顶部栏 */}
-        <header className="border-b bg-white px-4 py-3 shadow-sm flex items-center gap-3">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 transition-colors"
-            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+      {/* ===== Main ===== */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Header */}
+        <header className="shrink-0 flex items-center gap-3 px-4 py-3 bg-panel/80 backdrop-blur-xl border-b border-line z-10">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="rounded-lg p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={sidebarOpen ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} /></svg>
           </button>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-gray-800">
-              {currentSession ? currentSession.title : "🤖 LangChain Chat"}
-            </h1>
-            <p className="text-xs text-gray-400">
-              {currentPersona
-                ? `${currentPersona.name} · ${currentPersona.desc}`
-                : "第七课：Output Parser — 结构化输出"}
-            </p>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-medium truncate">{currentSession ? currentSession.title : "LangChain Chat"}</h1>
+            {currentPersona && <p className="text-xs text-ink-muted truncate">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
           </div>
-          <button
-            onClick={() => { setAnalyzeOpen(true); setAnalysisResult(null); }}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
-          >
-            📊 文本分析
+          {/* Theme toggle */}
+          <button onClick={toggleTheme} className="shrink-0 rounded-lg p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all" title={theme === "light" ? "切换暗色" : "切换亮色"}>
+            {theme === "light" ? MoonIcon : SunIcon}
+          </button>
+          {/* Analyze */}
+          <button onClick={() => { setAnalyzeOpen(true); setAnalysisResult(null); }}
+            className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-ink-muted hover:text-ink bg-card hover:bg-card-hover border border-line transition-all">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            文本分析
           </button>
         </header>
 
-        {/* 消息区域 */}
-        <div className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="mx-auto max-w-2xl space-y-4">
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
             {!currentSessionId ? (
-              // 未选择会话时的欢迎页
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="text-6xl mb-4">💬</div>
-                <p className="text-lg font-medium">选择一个对话，或创建新的</p>
-                <p className="text-sm mt-2">
-                  对话记录会保存在数据库中，刷新页面也不会丢失
-                </p>
-                <button
-                  onClick={() => createNewSession()}
-                  className="mt-6 rounded-xl bg-blue-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-600 transition-colors"
-                >
-                  开始新对话
+              <div className="flex flex-col items-center justify-center py-24">
+                <div className="w-20 h-20 rounded-2xl bg-linear-to-br from-violet-500 via-blue-500 to-cyan-400 flex items-center justify-center text-3xl mb-6 shadow-lg shadow-violet-500/20">✨</div>
+                <h2 className="text-2xl font-semibold mb-2">开始一段新对话</h2>
+                <p className="text-sm text-ink-muted mb-8 text-center max-w-md">支持联网搜索、图片生成、文件解析、知识库检索等多种能力</p>
+                <button onClick={() => setPersonaPickerOpen(true)}
+                  className="rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-8 py-3 text-sm font-medium text-white hover:shadow-lg hover:shadow-violet-500/25 transition-all hover:-translate-y-0.5">
+                  选择角色开始
                 </button>
               </div>
             ) : messages.length === 0 ? (
-              // 选择了会话但没有消息
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="text-6xl mb-4">
-                  {currentSession?.persona === "cat"
-                    ? "🐱"
-                    : currentSession?.persona === "coder"
-                      ? "💻"
-                      : currentSession?.persona === "poet"
-                        ? "🎭"
-                        : currentSession?.persona === "wife"
-                          ? "💕"
-                          : "🤖"}
-                </div>
-                <p className="text-lg font-medium">
-                  {currentPersona?.name}
-                </p>
-                <p className="text-sm mt-1">{currentPersona?.desc}</p>
-                <p className="text-xs mt-3 text-gray-300">
-                  发送一条消息开始对话吧
-                </p>
+              <div className="flex flex-col items-center justify-center py-24">
+                <div className="w-16 h-16 rounded-2xl bg-card border border-line flex items-center justify-center text-3xl mb-5">{currentPersona?.emoji || "✨"}</div>
+                <h2 className="text-lg font-medium mb-1">{currentPersona?.name}</h2>
+                <p className="text-sm text-ink-muted">{currentPersona?.desc}</p>
+                <p className="text-xs text-ink-faint mt-4">发送消息开始对话</p>
               </div>
             ) : (
-              // 消息列表
               messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[75%] rounded-2xl px-4 py-3 ${
-                      msg.role === "user"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-800 shadow-sm border border-gray-100"
-                    }`}
-                  >
+                <div key={index} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  {msg.role === "assistant" && (
+                    <div className="shrink-0 w-8 h-8 rounded-lg border border-line flex items-center justify-center text-sm mt-0.5" style={{ background: `linear-gradient(135deg, var(--c-ai-avatar-from), var(--c-ai-avatar-to))` }}>
+                      {currentPersona?.emoji || "✨"}
+                    </div>
+                  )}
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    msg.role === "user"
+                      ? "bg-linear-to-r from-violet-600 to-blue-600 text-white"
+                      : "border"
+                  }`} style={msg.role === "assistant" ? { background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)", boxShadow: "var(--c-shadow)" } : undefined}>
                     {msg.role === "assistant" ? (
-                      <div className="markdown-body text-sm leading-relaxed">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight]}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
+                      <div className="markdown-body text-sm leading-relaxed"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</ReactMarkdown></div>
                     ) : (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {msg.content}
-                      </p>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
                     )}
                   </div>
+                  {msg.role === "user" && (
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-linear-to-br from-violet-600 to-blue-600 flex items-center justify-center text-sm text-white mt-0.5">👤</div>
+                  )}
                 </div>
               ))
             )}
 
-            {/* 加载动画 */}
             {loading && messages[messages.length - 1]?.role !== "assistant" && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl bg-white px-4 py-3 shadow-sm border border-gray-100">
-                  <div className="flex space-x-1">
-                    <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]"></div>
-                    <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]"></div>
-                    <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce"></div>
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-lg border border-line flex items-center justify-center text-sm" style={{ background: `linear-gradient(135deg, var(--c-ai-avatar-from), var(--c-ai-avatar-to))` }}>
+                  {currentPersona?.emoji || "✨"}
+                </div>
+                <div className="rounded-2xl border px-4 py-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)" }}>
+                  <div className="flex space-x-1.5">
+                    <div className="h-2 w-2 rounded-full animate-bounce [animation-delay:-0.3s]" style={{ background: "var(--c-loading-dot)" }}></div>
+                    <div className="h-2 w-2 rounded-full animate-bounce [animation-delay:-0.15s]" style={{ background: "var(--c-loading-dot)" }}></div>
+                    <div className="h-2 w-2 rounded-full animate-bounce" style={{ background: "var(--c-loading-dot)" }}></div>
                   </div>
                 </div>
               </div>
             )}
-
             <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* 输入区域 */}
+        {/* Input */}
         {currentSessionId && (
-          <div className="border-t bg-white px-4 py-4">
-            <div className="mx-auto flex max-w-2xl gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              {/* 联网搜索开关 */}
-              <button
-                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                disabled={loading}
-                className={`rounded-xl border px-3 py-3 transition-colors disabled:opacity-50 ${
-                  webSearchEnabled
-                    ? "border-green-400 bg-green-50 text-green-600"
-                    : "border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-                }`}
-                title={webSearchEnabled ? "联网搜索已开启" : "联网搜索已关闭"}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                </svg>
-              </button>
-              {/* 文件上传 */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-                className="rounded-xl border border-gray-200 px-3 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors disabled:opacity-50"
-                title="上传图片或文件"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="输入消息... (Enter 发送)"
-                className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                disabled={loading}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                className="rounded-xl bg-blue-500 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                发送
-              </button>
+          <div className="shrink-0 px-4 pb-4 pt-2">
+            <div className="mx-auto max-w-3xl">
+              <div className="rounded-2xl bg-card border border-line p-2 flex items-end gap-2 focus-within:border-violet-500/50 transition-colors" style={{ boxShadow: "var(--c-shadow)" }}>
+                <div className="flex gap-1 pl-1">
+                  <button onClick={() => setWebSearchEnabled(!webSearchEnabled)} disabled={loading}
+                    className={`rounded-lg p-2 transition-all disabled:opacity-30 ${webSearchEnabled ? "text-green-text bg-green-soft" : "text-ink-faint hover:text-ink-muted hover:bg-card-hover"}`}
+                    title={webSearchEnabled ? "联网搜索已开启" : "联网搜索已关闭"}>
+                    {GlobeIcon}
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt" onChange={handleFileUpload} className="hidden" />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={loading}
+                    className="rounded-lg p-2 text-ink-faint hover:text-ink-muted hover:bg-card-hover transition-all disabled:opacity-30" title="上传文件">
+                    {ClipIcon}
+                  </button>
+                </div>
+                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                  placeholder="输入消息..." className="flex-1 bg-transparent text-sm placeholder-ink-faint outline-none py-2 px-1" disabled={loading} />
+                <button onClick={sendMessage} disabled={loading || !input.trim()}
+                  className="shrink-0 rounded-xl bg-linear-to-r from-violet-600 to-blue-600 p-2.5 text-white transition-all hover:shadow-lg hover:shadow-violet-500/20 disabled:opacity-30 disabled:cursor-not-allowed">
+                  {SendIcon}
+                </button>
+              </div>
+              {webSearchEnabled && (
+                <div className="flex items-center gap-1 mt-2 px-2">
+                  <span className="flex items-center gap-1 text-[11px] text-green-text">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-text animate-pulse"></span>
+                    联网搜索已开启
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* ===== 文本分析弹窗（第七课：Output Parser） ===== */}
-      {analyzeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl mx-4">
-            {/* 弹窗标题 */}
-            <div className="flex items-center justify-between border-b px-6 py-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">📊 文本分析器</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Output Parser — AI 返回结构化 JSON，不再是自由文本
-                </p>
+      {/* ===== Persona Picker ===== */}
+      {personaPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setPersonaPickerOpen(false)}>
+          <div className="w-full max-w-lg mx-4 rounded-2xl bg-modal border border-line shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+              <h2 className="text-base font-semibold">选择角色</h2>
+              <button onClick={() => setPersonaPickerOpen(false)} className="text-ink-muted hover:text-ink transition-colors">{CloseIcon}</button>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
+              {allPersonas.map((p) => (
+                <button key={p.id} onClick={() => createNewSession(p.id)}
+                  className="flex items-center gap-3 rounded-xl bg-card hover:bg-card-hover border border-line hover:border-accent-border px-4 py-3 text-left transition-all group">
+                  <span className="text-2xl group-hover:scale-110 transition-transform">{p.emoji}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{p.name}</p>
+                    <p className="text-xs text-ink-muted truncate">{p.desc}</p>
+                  </div>
+                </button>
+              ))}
+              <button onClick={() => { setPersonaPickerOpen(false); setPersonaModalOpen(true); }}
+                className="flex items-center gap-3 rounded-xl border border-dashed border-line hover:border-accent-border px-4 py-3 text-left transition-all group">
+                <span className="w-10 h-10 rounded-lg bg-card flex items-center justify-center text-ink-faint group-hover:text-accent-text transition-colors">{PlusIcon}</span>
+                <div>
+                  <p className="text-sm font-medium text-ink-muted group-hover:text-ink-secondary">创建新角色</p>
+                  <p className="text-xs text-ink-faint">自定义人设和提示词</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Persona Manager ===== */}
+      {personaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setPersonaModalOpen(false)}>
+          <div className="w-full max-w-xl mx-4 rounded-2xl bg-modal border border-line shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+              <h2 className="text-base font-semibold">管理角色</h2>
+              <button onClick={() => setPersonaModalOpen(false)} className="text-ink-muted hover:text-ink transition-colors">{CloseIcon}</button>
+            </div>
+            <div className="p-6 space-y-4 border-b border-line">
+              <h3 className="text-sm font-medium text-ink-secondary">创建新角色</h3>
+              <div className="grid grid-cols-[auto_1fr] gap-3">
+                <div>
+                  <label className="text-xs text-ink-muted mb-1 block">Emoji</label>
+                  <input value={newPersona.emoji} onChange={(e) => setNewPersona({ ...newPersona, emoji: e.target.value })}
+                    className="w-14 h-10 rounded-lg bg-input-bg border border-line text-center text-lg outline-none focus:border-violet-500/50" maxLength={4} />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-muted mb-1 block">角色名称</label>
+                  <input value={newPersona.name} onChange={(e) => setNewPersona({ ...newPersona, name: e.target.value })} placeholder="例：旅行顾问"
+                    className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                </div>
               </div>
-              <button
-                onClick={() => setAnalyzeOpen(false)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-              >
-                ✕
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">简短描述</label>
+                <input value={newPersona.description} onChange={(e) => setNewPersona({ ...newPersona, description: e.target.value })} placeholder="一句话描述角色特点"
+                  className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">系统提示词 (System Prompt)</label>
+                <textarea value={newPersona.prompt} onChange={(e) => setNewPersona({ ...newPersona, prompt: e.target.value })}
+                  placeholder={"定义角色的性格、说话风格、能力范围...\n例：你是一个专业的旅行顾问，擅长规划行程。"} rows={4}
+                  className="w-full rounded-lg bg-input-bg border border-line px-3 py-2.5 text-sm placeholder-ink-faint outline-none resize-none focus:border-violet-500/50" />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">温度 (Temperature: {newPersona.temperature})</label>
+                <input type="range" min="0" max="1" step="0.05" value={newPersona.temperature} onChange={(e) => setNewPersona({ ...newPersona, temperature: parseFloat(e.target.value) })} className="w-full" />
+                <div className="flex justify-between text-[10px] text-ink-faint mt-1"><span>精确</span><span>创意</span></div>
+              </div>
+              <button onClick={handleCreatePersona} disabled={!newPersona.name.trim() || !newPersona.prompt.trim()}
+                className="w-full rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-violet-500/20 transition-all">
+                创建角色
               </button>
             </div>
+            {customPersonas.length > 0 && (
+              <div className="p-6 space-y-2">
+                <h3 className="text-sm font-medium text-ink-secondary mb-3">已创建的角色</h3>
+                {customPersonas.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 rounded-xl bg-card border border-line px-4 py-3">
+                    <span className="text-xl">{p.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-xs text-ink-muted truncate">{p.description}</p>
+                    </div>
+                    <button onClick={() => handleDeletePersona(p.id)} className="shrink-0 text-ink-faint hover:text-red-500 transition-colors" title="删除">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-            {/* 输入区域 */}
+      {/* ===== Analysis Modal ===== */}
+      {analyzeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setAnalyzeOpen(false)}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-modal border border-line shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line px-6 py-4">
+              <div><h2 className="text-base font-semibold">文本分析器</h2><p className="text-xs text-ink-muted mt-0.5">Output Parser — 结构化 JSON 输出</p></div>
+              <button onClick={() => setAnalyzeOpen(false)} className="text-ink-muted hover:text-ink transition-colors">{CloseIcon}</button>
+            </div>
             <div className="px-6 py-4">
-              <textarea
-                value={analyzeText}
-                onChange={(e) => setAnalyzeText(e.target.value)}
-                placeholder="粘贴或输入一段文本，AI 会返回结构化的分析结果（情感、关键词、摘要、分类等）..."
-                className="w-full h-32 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none resize-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              />
-              <button
-                onClick={handleAnalyze}
-                disabled={analyzeLoading || !analyzeText.trim()}
-                className="mt-3 w-full rounded-xl bg-purple-500 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {analyzeLoading ? "🔄 AI 正在分析中..." : "开始分析"}
+              <textarea value={analyzeText} onChange={(e) => setAnalyzeText(e.target.value)} placeholder="粘贴一段文本，AI 会返回结构化的分析结果..."
+                className="w-full h-32 rounded-xl bg-input-bg border border-line px-4 py-3 text-sm placeholder-ink-faint outline-none resize-none focus:border-violet-500/50" />
+              <button onClick={handleAnalyze} disabled={analyzeLoading || !analyzeText.trim()}
+                className="mt-3 w-full rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-6 py-3 text-sm font-medium text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                {analyzeLoading ? "分析中..." : "开始分析"}
               </button>
             </div>
-
-            {/* 分析结果卡片 */}
             {analysisResult && (
               <div className="px-6 pb-6 space-y-4">
-                <div className="h-px bg-gray-100" />
-
-                {/* 摘要 */}
-                <div className="rounded-xl bg-blue-50 p-4">
-                  <h3 className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">📝 摘要</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed">{analysisResult.summary}</p>
+                <div className="h-px bg-line" />
+                <div className="rounded-xl bg-accent-soft border border-accent-border p-4">
+                  <h3 className="text-xs font-semibold text-accent-text uppercase tracking-wide mb-1">摘要</h3>
+                  <p className="text-sm text-ink-secondary leading-relaxed">{analysisResult.summary}</p>
                 </div>
-
-                {/* 情感 + 分数 */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-white border border-gray-100 p-4">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">情感倾向</h3>
+                  <div className="rounded-xl bg-card border border-line p-4">
+                    <h3 className="text-xs text-ink-muted uppercase tracking-wide mb-2">情感倾向</h3>
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{sentimentMap[analysisResult.sentiment]?.emoji}</span>
-                      <span className={`rounded-full px-3 py-1 text-sm font-medium ${sentimentMap[analysisResult.sentiment]?.color}`}>
-                        {sentimentMap[analysisResult.sentiment]?.label}
-                      </span>
+                      <span className="rounded-full bg-accent-soft border border-accent-border px-3 py-1 text-sm font-medium text-accent-text">{sentimentMap[analysisResult.sentiment]?.label}</span>
                     </div>
                   </div>
-                  <div className="rounded-xl bg-white border border-gray-100 p-4">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">情感强度</h3>
+                  <div className="rounded-xl bg-card border border-line p-4">
+                    <h3 className="text-xs text-ink-muted uppercase tracking-wide mb-2">情感强度</h3>
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl font-bold text-gray-800">
-                        {Math.round(analysisResult.sentimentScore * 100)}%
-                      </span>
-                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-linear-to-r from-purple-400 to-purple-600 transition-all"
-                          style={{ width: `${analysisResult.sentimentScore * 100}%` }}
-                        />
+                      <span className="text-2xl font-bold">{Math.round(analysisResult.sentimentScore * 100)}%</span>
+                      <div className="flex-1 h-2 bg-card-hover rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-linear-to-r from-violet-500 to-blue-500 transition-all" style={{ width: `${analysisResult.sentimentScore * 100}%` }} />
                       </div>
                     </div>
                   </div>
                 </div>
-
-                {/* 关键词 */}
-                <div className="rounded-xl bg-white border border-gray-100 p-4">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">🔑 关键词</h3>
+                <div className="rounded-xl bg-card border border-line p-4">
+                  <h3 className="text-xs text-ink-muted uppercase tracking-wide mb-2">关键词</h3>
                   <div className="flex flex-wrap gap-2">
                     {analysisResult.keywords.map((kw, i) => (
-                      <span key={i} className="rounded-full bg-purple-50 px-3 py-1 text-sm text-purple-700 font-medium">
-                        {kw}
-                      </span>
+                      <span key={i} className="rounded-full bg-accent-soft border border-accent-border px-3 py-1 text-sm text-accent-text">{kw}</span>
                     ))}
                   </div>
                 </div>
-
-                {/* 元信息 */}
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="rounded-xl bg-gray-50 p-3 text-center">
-                    <p className="text-xs text-gray-400">分类</p>
-                    <p className="text-sm font-medium text-gray-700 mt-1">{categoryMap[analysisResult.category] || analysisResult.category}</p>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 p-3 text-center">
-                    <p className="text-xs text-gray-400">语言</p>
-                    <p className="text-sm font-medium text-gray-700 mt-1">{analysisResult.language === "zh" ? "中文" : analysisResult.language === "en" ? "英文" : "中英混合"}</p>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 p-3 text-center">
-                    <p className="text-xs text-gray-400">字数</p>
-                    <p className="text-sm font-medium text-gray-700 mt-1">{analysisResult.wordCount}</p>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 p-3 text-center">
-                    <p className="text-xs text-gray-400">阅读时间</p>
-                    <p className="text-sm font-medium text-gray-700 mt-1">{analysisResult.readingTime}</p>
-                  </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { label: "分类", value: categoryMap[analysisResult.category] || analysisResult.category },
+                    { label: "语言", value: analysisResult.language === "zh" ? "中文" : analysisResult.language === "en" ? "英文" : "中英混合" },
+                    { label: "字数", value: String(analysisResult.wordCount) },
+                    { label: "阅读", value: analysisResult.readingTime },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl bg-card border border-line p-3 text-center">
+                      <p className="text-[10px] text-ink-faint uppercase">{item.label}</p>
+                      <p className="text-sm font-medium text-ink-secondary mt-1">{item.value}</p>
+                    </div>
+                  ))}
                 </div>
-
-                {/* 原始 JSON */}
-                <details className="rounded-xl bg-gray-50 border border-gray-100">
-                  <summary className="px-4 py-3 text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                    🔧 查看原始 JSON（Output Parser 解析后的结构化数据）
-                  </summary>
-                  <pre className="px-4 pb-4 text-xs text-gray-600 overflow-x-auto">
-                    {JSON.stringify(analysisResult, null, 2)}
-                  </pre>
+                <details className="rounded-xl bg-card border border-line">
+                  <summary className="px-4 py-3 text-xs text-ink-muted cursor-pointer hover:text-ink-secondary">查看原始 JSON</summary>
+                  <pre className="px-4 pb-4 text-xs text-ink-muted overflow-x-auto">{JSON.stringify(analysisResult, null, 2)}</pre>
                 </details>
               </div>
             )}

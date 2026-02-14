@@ -16,6 +16,7 @@ import {
   getRecentMessages,
   addMessage,
   updateSessionTitle,
+  getCustomPersona,
 } from "@/lib/db";
 import { createAgent } from "@/lib/graph";
 import { ALL_TOOLS, webSearchTool } from "@/lib/tools";
@@ -114,7 +115,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const personaConfig = PERSONAS[session.persona] || PERSONAS.assistant;
+    // 查找角色配置：先查内置，再查自定义
+    let personaConfig = PERSONAS[session.persona];
+    if (!personaConfig) {
+      const custom = getCustomPersona(session.persona);
+      if (custom) {
+        personaConfig = {
+          name: custom.name,
+          prompt: custom.prompt,
+          temperature: custom.temperature,
+        };
+      } else {
+        personaConfig = PERSONAS.assistant;
+      }
+    }
 
     const historyMessages = getRecentMessages(sessionId, 20);
     addMessage(sessionId, "user", message);

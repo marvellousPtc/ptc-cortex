@@ -62,6 +62,17 @@ function initTables() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
+
+    -- 自定义角色表
+    CREATE TABLE IF NOT EXISTS custom_personas (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '🤖',
+      description TEXT NOT NULL DEFAULT '',
+      prompt TEXT NOT NULL,
+      temperature REAL NOT NULL DEFAULT 0.7,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -183,6 +194,52 @@ export function getRecentMessages(
     )
     .all(sessionId, limit) as Message[];
   return rows;
+}
+
+// ===== 自定义角色操作 =====
+
+export interface CustomPersona {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  prompt: string;
+  temperature: number;
+  created_at: string;
+}
+
+/** 创建自定义角色 */
+export function createCustomPersona(
+  name: string,
+  emoji: string,
+  description: string,
+  prompt: string,
+  temperature: number = 0.7
+): CustomPersona {
+  const id = "custom_" + generateId();
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO custom_personas (id, name, emoji, description, prompt, temperature) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(id, name, emoji, description, prompt, temperature);
+  return db.prepare("SELECT * FROM custom_personas WHERE id = ?").get(id) as CustomPersona;
+}
+
+/** 获取所有自定义角色 */
+export function getAllCustomPersonas(): CustomPersona[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM custom_personas ORDER BY created_at DESC").all() as CustomPersona[];
+}
+
+/** 获取单个自定义角色 */
+export function getCustomPersona(id: string): CustomPersona | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM custom_personas WHERE id = ?").get(id) as CustomPersona | undefined;
+}
+
+/** 删除自定义角色 */
+export function deleteCustomPersona(id: string) {
+  const db = getDb();
+  db.prepare("DELETE FROM custom_personas WHERE id = ?").run(id);
 }
 
 // ===== 工具函数 =====

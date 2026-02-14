@@ -1,0 +1,138 @@
+# 部署到自有服务器（GitHub 构建 + SSH 部署）
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: 安装依赖
+        run: pnpm install
+
+      - name: 构建项目
+        run: pnpm next build
+        env:
+          # 构建时需要 basePath
+          NEXT_PUBLIC_BASE_PATH: /chat
+          # better-sqlite3 在 CI 里编译可能架构不同，
+          # 但 Next.js build 只做代码打包，运行时在服务器上 rebuild
+          DEEPSEEK_API_KEY: placeholder
+          DEEPSEEK_BASE_URL: https://api.deepseek.com
+
+      - name: 打包部署文件
+        run: |
+          mkdir -p deploy
+          cp -r .next deploy/.next
+          cp -r public deploy/public
+          cp -r src deploy/src
+          cp package.json deploy/
+          cp pnpm-lock.yaml deploy/
+          cp ecosystem.config.js deploy/
+          cp next.config.ts deploy/
+          cp tsconfig.json deploy/
+          # 删除不需要的缓存（减小包体积）
+          rm -rf deploy/.next/cache
+          # 打包
+          tar -czf deploy.tar.gz -C deploy .
+
+      - name: 上传部署包到服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "deploy.tar.gz"
+          target: "/tmp"
+
+      - name: 解压并重启服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            PROJECT_PATH="${{ secrets.LANGCHAIN_PROJECT_PATH || '/ptc/langchain-chat' }}"
+
+            # 备份 .env.local（含 API 密钥，不能丢）
+            if [ -f "$PROJECT_PATH/.env.local" ]; then
+              cp "$PROJECT_PATH/.env.local" /tmp/.env.local.backup
+            fi
+
+            # 备份 data 目录（SQLite 数据库，必须持久化）
+            if [ -d "$PROJECT_PATH/data" ]; then
+              cp -r "$PROJECT_PATH/data" /tmp/langchain-data-backup
+            fi
+
+            # 备份上传文件目录
+            if [ -d "$PROJECT_PATH/public/uploads" ]; then
+              cp -r "$PROJECT_PATH/public/uploads" /tmp/langchain-uploads-backup
+            fi
+
+            # 确保目标目录存在
+            mkdir -p "$PROJECT_PATH"
+
+            # 清空目标目录（保留隐藏文件夹如 .next 之外的）
+            rm -rf "$PROJECT_PATH"/*
+            rm -rf "$PROJECT_PATH"/.[!.]*
+
+            # 解压新文件
+            tar -xzf /tmp/deploy.tar.gz -C "$PROJECT_PATH"
+
+            # 恢复 .env.local
+            if [ -f "/tmp/.env.local.backup" ]; then
+              mv /tmp/.env.local.backup "$PROJECT_PATH/.env.local"
+            fi
+
+            # 恢复 data 目录（SQLite 数据库）
+            if [ -d "/tmp/langchain-data-backup" ]; then
+              rm -rf "$PROJECT_PATH/data"
+              mv /tmp/langchain-data-backup "$PROJECT_PATH/data"
+            fi
+
+            # 恢复上传文件
+            if [ -d "/tmp/langchain-uploads-backup" ]; then
+              rm -rf "$PROJECT_PATH/public/uploads"
+              mv /tmp/langchain-uploads-backup "$PROJECT_PATH/public/uploads"
+            fi
+
+            # 清理临时文件
+            rm -f /tmp/deploy.tar.gz
+
+            cd "$PROJECT_PATH"
+
+            # 安装依赖（含 better-sqlite3 原生编译）
+            pnpm install --prod
+
+            # 重新编译原生模块（确保和服务器架构匹配）
+            pnpm rebuild better-sqlite3
+
+            # 重启 PM2
+            if pm2 describe langchain-chat > /dev/null 2>&1; then
+              pm2 reload ecosystem.config.js --update-env
+            else
+              pm2 start ecosystem.config.js
+            fi
+            pm2 save
+
+            echo "✅ langchain-chat 部署完成！"

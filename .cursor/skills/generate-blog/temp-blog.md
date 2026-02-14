@@ -1,278 +1,219 @@
-## 背景
+到这一步，我们的 AI 已经有了不少能力：联网搜索、图片生成、图片理解、文件解析、长期记忆、知识库检索、数据库查询。但承载这些能力的核心循环——ReAct 模式，还是我们手写的 `while` 循环。
 
-用 LangChain + Next.js 搭建 AI 聊天机器人的过程中，踩了不少坑。这些坑有的是文档过时、有的是环境差异、有的是架构设计的暗坑。记录下来，希望后来人能少走弯路。
+手写循环有什么问题？能用，但不好维护。随着工具越来越多、流程越来越复杂，手写的循环变得又长又脆弱。这节课我们用 LangGraph 重构它。
 
-## 坑 1：MemoryVectorStore 导入路径变了
+## 什么是 LangGraph
 
-### 现象
+LangGraph 是 LangChain 团队开发的工作流编排框架。核心概念：
 
-按照 LangChain 文档写的导入：
+- **State（状态）**：流经图的数据，在我们的场景中是消息列表
+- **Node（节点）**：处理状态的函数（调用 LLM、执行工具等）
+- **Edge（边）**：节点之间的连接，支持条件分支
+
+它把 Agent 的执行流程从"一段代码"变成"一张图"：
+
+```
+用户消息 → [LLM节点] → 判断是否需要工具？
+                          ├── 是 → [工具节点] → 回到 LLM
+                          └── 否 → 输出最终回答
+```
+
+## 重构前 vs 重构后
+
+### 重构前：手写 while 循环
 
 ```typescript
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
-```
-
-直接报错：
-
-```
-Module not found: Can't resolve 'langchain/vectorstores/memory'
-```
-
-### 原因
-
-LangChain JS 做过一次大的拆包重构，很多模块从 `langchain` 主包移到了独立子包。`MemoryVectorStore` 被移到了 `@langchain/classic` 包里，但官方文档没有全部更新。
-
-### 解决
-
-安装新包，换导入路径：
-
-```bash
-pnpm add @langchain/classic
-```
-
-```typescript
-import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
-```
-
-### 教训
-
-LangChain JS 版本迭代很快，文档经常跟不上代码。遇到 `Module not found` 先去 npm 搜包名，看看是不是被移走了。
-
-## 坑 2：HuggingFace 模型下载超时
-
-### 现象
-
-首次运行 RAG 时，`@huggingface/transformers` 需要下载 Embedding 模型（`Xenova/all-MiniLM-L6-v2`，约 23MB）。在国内网络环境下，直连 HuggingFace 会超时：
-
-```
-ConnectTimeoutError: Connect Timeout Error
-  at connTimeout (node:internal/deps/undici/undici:...)
-```
-
-等了好几分钟，最后超时失败。
-
-### 原因
-
-HuggingFace 的服务器在国外，国内直连不稳定，小模型 23MB 的下载都可能失败。
-
-### 解决
-
-`@huggingface/transformers` 支持设置镜像源。在代码中加一行：
-
-```typescript
-const { pipeline, env } = await import("@huggingface/transformers");
-env.remoteHost = "https://hf-mirror.com";  // 使用国内镜像
-```
-
-`hf-mirror.com` 是 HuggingFace 的国内镜像站，下载速度从几 KB/s 变成了几 MB/s，几秒就搞定了。
-
-### 教训
-
-用到海外资源（HuggingFace、npm 某些包、Docker 镜像等）时，国内环境要优先考虑镜像源。
-
-## 坑 3：HuggingFaceTransformersEmbeddings 类不可用
-
-### 现象
-
-LangChain 文档推荐使用 `HuggingFaceTransformersEmbeddings` 类来做本地 Embedding：
-
-```typescript
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
-```
-
-但实际运行时报错或行为异常。
-
-### 原因
-
-这个类依赖的 `@xenova/transformers` 包已经被重命名为 `@huggingface/transformers`，内部 API 也有变化。LangChain 社区包的适配没跟上。
-
-### 解决
-
-自己封装一个 `LocalEmbeddings` 类，直接用 `@huggingface/transformers`：
-
-```typescript
-class LocalEmbeddings extends Embeddings {
-  private pipe: any = null;
-
-  private async getPipeline() {
-    const { pipeline, env } = await import("@huggingface/transformers");
-    env.remoteHost = "https://hf-mirror.com";
-    this.pipe = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", { dtype: "fp32" });
-    return this.pipe;
+// 伪代码，实际更复杂
+let response = await modelWithTools.invoke(messages);
+while (response.tool_calls?.length > 0) {
+  for (const toolCall of response.tool_calls) {
+    const result = await executeTool(toolCall);
+    messages.push(new ToolMessage(result));
   }
+  response = await modelWithTools.invoke(messages);
+}
+// 最后输出 response.content
+```
 
-  async embedDocuments(texts: string[]): Promise<number[][]> {
-    const pipe = await this.getPipeline();
-    const results: number[][] = [];
-    for (const text of texts) {
-      const output = await pipe(text, { pooling: "mean", normalize: true });
-      results.push(Array.from(output.data as Float32Array));
-    }
-    return results;
-  }
+问题：
+1. 循环终止条件需要自己判断
+2. 错误处理需要自己写
+3. 流式输出需要自己处理
+4. 加新逻辑（审批、人工介入）需要改循环内部
 
-  async embedQuery(text: string): Promise<number[]> {
-    const [result] = await this.embedDocuments([text]);
-    return result;
+### 重构后：LangGraph createReactAgent
+
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+
+export function createAgent(
+  systemPrompt: string,
+  temperature: number = 0.7,
+  tools?: StructuredToolInterface[]
+) {
+  const model = new ChatOpenAI({
+    model: "deepseek-chat",
+    temperature,
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    configuration: { baseURL: process.env.DEEPSEEK_BASE_URL },
+  });
+
+  return createReactAgent({
+    llm: model,
+    tools: tools || ALL_TOOLS,
+    prompt: systemPrompt,
+  });
+}
+```
+
+整个 ReAct 循环——"LLM 判断 → 调工具 → 把结果喂回 → 再判断"——被 `createReactAgent` 一行封装了。
+
+## streamEvents：细粒度的流式事件
+
+LangGraph 最强大的特性之一是 `streamEvents`。它把 Agent 执行过程中的每个细节都暴露为事件：
+
+```typescript
+const eventStream = agent.streamEvents(
+  { messages: inputMessages },
+  { version: "v2" }
+);
+
+for await (const event of eventStream) {
+  switch (event.event) {
+    case "on_tool_start":
+      // 工具开始调用 → 通知前端"正在查询"
+      console.log(`🔧 调用工具: ${event.name}`, event.data?.input);
+      controller.enqueue(encoder.encode("> 🔍 正在查询中...\n\n"));
+      break;
+
+    case "on_tool_end":
+      // 工具调用完成 → 拿到结果
+      const result = event.data?.output?.content;
+      console.log(`📋 工具结果: ${result?.slice(0, 300)}`);
+      break;
+
+    case "on_chat_model_stream":
+      // LLM 逐字输出 → 流式推给前端
+      const token = event.data?.chunk?.content;
+      if (token) lastAIContent += token;
+      break;
+
+    case "on_chat_model_end":
+      // LLM 一轮回复完成 → 判断是工具调用还是最终回答
+      const hasToolCalls = event.data?.output?.tool_calls?.length > 0;
+      if (!hasToolCalls && lastAIContent) {
+        // 最终回答，推给前端
+        fullReply = lastAIContent;
+        controller.enqueue(encoder.encode(lastAIContent));
+      }
+      break;
   }
 }
 ```
 
-代码量不多，而且更可控 —— 你知道每一步在做什么。
+事件类型说明：
 
-### 教训
+| 事件 | 含义 | 用途 |
+|------|------|------|
+| `on_tool_start` | 工具开始执行 | 显示加载状态 |
+| `on_tool_end` | 工具执行完毕 | 日志记录、展示来源 |
+| `on_chat_model_stream` | LLM 输出一个 token | 流式显示 |
+| `on_chat_model_end` | LLM 一轮输出完成 | 判断是否为最终回答 |
 
-第三方封装出问题时，不要死磕，直接看底层库的 API 自己封装一个。代码量可能就多十几行，但稳定性高得多。
+## 区分工具调用轮和最终回答轮
 
-## 坑 4：SSH 隧道端口冲突
+ReAct Agent 的 LLM 会被调用多次：第一次可能决定调工具，拿到工具结果后再被调用一次生成最终回答。我们只想把最终回答推给用户。
 
-### 现象
-
-连接远端 PostgreSQL 时，先想通过 SSH 隧道转发：
-
-```bash
-ssh -L 5432:127.0.0.1:5432 root@8.134.248.1 -N
-```
-
-报错：
-
-```
-bind [127.0.0.1]:5432: Address already in use
-channel_setup_fwd_listener_tcpip: cannot listen to port: 5432
-```
-
-### 原因
-
-本地已经有一个 PostgreSQL 在跑（或者其他程序占了 5432 端口），所以 SSH 隧道无法绑定这个端口。
-
-### 解决
-
-换一个本地端口：
-
-```bash
-ssh -L 15432:127.0.0.1:5432 root@8.134.248.1 -N
-```
-
-然后更新 `.env.local`：
-
-```
-DATABASE_URL=postgresql://user:pass@127.0.0.1:15432/your_db
-```
-
-### 教训
-
-SSH 隧道的本地端口是可以随便选的（只要不冲突），不一定要和远端端口一样。用一个高位端口（如 15432、25432）能避免大部分冲突。
-
-## 坑 5：Tool Calling 最终回答被截断
-
-### 现象
-
-问 AI「我今天写了几篇博客」，它查到了数量（3 篇），回答说「让我再查一下具体是哪些文章」，然后就卡住了 —— 具体文章列表没查出来。
-
-### 原因
-
-原来的代码在 ReAct 循环里有个设计缺陷：
+判断方式：
 
 ```typescript
-while (maxIterations > 0) {
-  const response = await modelWithTools.invoke(currentMessages);  // 第一次调用
-  
-  if (response.tool_calls) {
-    // 执行工具...
-    continue;
+if (event.event === "on_chat_model_end") {
+  const hasToolCalls = event.data?.output?.tool_calls?.length > 0;
+
+  if (!hasToolCalls && lastAIContent) {
+    // 没有工具调用 = 这是最终回答
+    fullReply = lastAIContent;
+    // 推给前端...
   }
-  
-  // 没有 tool_calls → 重新 stream 获取最终回答
-  const finalStream = await model.stream(currentMessages);  // 第二次调用！！
-  // ...
+
+  // 重置，准备下一轮
+  lastAIContent = "";
 }
 ```
 
-问题出在「两次调用」：
+如果 LLM 的输出包含 `tool_calls`，说明这轮是"决定调工具"，不是最终回答，跳过。只有没有 `tool_calls` 的那轮才是给用户的最终回复。
 
-1. `invoke()` 返回的结果说「不需要调工具了」，但我们把这个结果**扔掉了**
-2. 又发了一次 `stream()` 请求，这是一次全新的 API 调用
-3. 第二次调用可能产生完全不同的回答 —— 比如又想调工具但走的是流式输出，没法正确处理 tool_calls
+## 动态工具注入
 
-而且 `model.stream()` 用的是没绑工具的模型实例，即使 AI 想调工具也调不了。
-
-### 解决
-
-不再做两次调用。`invoke()` 返回最终回答时，直接用 `response.content`：
+重构后的 `createAgent` 接受可选的 `tools` 参数，这让工具动态加载成为可能：
 
 ```typescript
-while (maxIterations > 0) {
-  const response = await modelWithTools.invoke(currentMessages);
-  
-  if (response.tool_calls && response.tool_calls.length > 0) {
-    // 执行工具...
-    continue;
-  }
-  
-  // 直接用 invoke 返回的内容，不再重新请求
-  const finalText = typeof response.content === "string" ? response.content : "";
-  if (finalText) {
-    // 模拟流式效果：分段发送
-    const chunkSize = 5;
-    for (let i = 0; i < finalText.length; i += chunkSize) {
-      controller.enqueue(encoder.encode(finalText.slice(i, i + chunkSize)));
-    }
-  }
-  break;
+export function createAgent(
+  systemPrompt: string,
+  temperature: number = 0.7,
+  tools?: StructuredToolInterface[]  // 可选自定义工具列表
+) {
+  return createReactAgent({
+    llm: model,
+    tools: tools || ALL_TOOLS,
+  });
 }
+
+// 使用时按需过滤
+const tools = webSearchEnabled
+  ? ALL_TOOLS
+  : ALL_TOOLS.filter((t) => t !== webSearchTool);
+
+const agent = createAgent(systemPrompt, 0.7, tools);
 ```
 
-### 教训
+这个能力让我们后续能做"联网搜索开关"——用户可以自己控制是否启用搜索。
 
-LLM API 调用**不是幂等的** —— 同样的输入，两次调用可能返回不同的结果。在 ReAct 循环中，拿到一个满意的结果就直接用，不要扔掉重来。
+## 为什么用 createReactAgent 而不是自己建图？
 
-## 坑 6：better-sqlite3 原生模块编译问题
+LangGraph 提供了底层的 `StateGraph` API，可以自己定义节点和边。但对于标准的 ReAct 模式，`createReactAgent` 是更好的选择：
 
-### 现象
+1. **内置 ReAct 流程**：不用自己画图，工具调用循环自动处理
+2. **内置容错**：工具执行出错会被优雅地处理
+3. **支持 streamEvents**：不需要额外配置
+4. **简洁**：两行代码搞定
 
-安装 `better-sqlite3`（SQLite 的 Node.js 绑定）后，pnpm 报警告：
+如果未来需要更复杂的流程（比如加审批节点、并行执行、条件分支），再用 `StateGraph` 不迟。
 
-```
-Ignored build scripts: better-sqlite3
-```
+## 踩过的坑
 
-运行时找不到编译后的 `.node` 文件，模块加载失败。
+### Next.js 打包问题
 
-### 原因
-
-pnpm 默认不执行依赖包的构建脚本（安全考虑），但 `better-sqlite3` 是原生 C++ 模块，必须编译才能用。
-
-### 解决
-
-手动触发编译：
-
-```bash
-pnpm rebuild better-sqlite3
-```
-
-同时在 `next.config.ts` 中把它排除出 webpack 打包：
+`@langchain/langgraph` 需要加到 `serverExternalPackages`：
 
 ```typescript
-const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3"],
-};
+// next.config.ts
+serverExternalPackages: ["pdf-parse", "xlsx", "@langchain/langgraph"]
 ```
 
-### 教训
+否则 Webpack 打包时会报各种模块找不到的错误。
 
-Node.js 原生模块（C++ addon）和普通 JS 包不一样，需要编译。用 pnpm 时要注意它的安全策略可能会跳过编译步骤。
+### streamEvents 版本
+
+`streamEvents` 需要指定 `version: "v2"`。v1 和 v2 的事件格式不同，v2 是推荐版本：
+
+```typescript
+agent.streamEvents({ messages }, { version: "v2" })
+```
+
+### 工具调用类型
+
+`createAgent` 的 `tools` 参数类型需要是 `StructuredToolInterface[]`（从 `@langchain/core/tools` 导入），不是普通数组。
 
 ## 总结
 
-这些坑分为几类：
+LangGraph 重构的核心价值：
 
-| 类型 | 具体问题 | 本质原因 |
-|---|---|---|
-| 包管理 | MemoryVectorStore 路径变化 | LangChain 拆包重构，文档滞后 |
-| 网络环境 | HuggingFace 下载超时 | 国内网络对海外资源不友好 |
-| 依赖适配 | HuggingFaceTransformersEmbeddings 失效 | 上游库重命名，社区包没跟上 |
-| 系统冲突 | SSH 隧道端口被占 | 本地已有服务占用端口 |
-| 架构设计 | Tool Calling 回答截断 | 双重 API 调用导致不一致 |
-| 原生模块 | better-sqlite3 编译失败 | pnpm 安全策略跳过构建脚本 |
+1. **代码更简洁**：手写循环变成 `createReactAgent` 一行
+2. **事件更透明**：`streamEvents` 暴露了每个执行细节
+3. **扩展更方便**：动态工具注入、未来加节点都很容易
+4. **错误更健壮**：框架内置了容错机制
 
-最大的感受：**LangChain 的 JS 生态还在快速迭代中**，文档和实际代码经常有出入。遇到问题时，比起搜文档，直接去 npm 搜包、去 GitHub 看源码往往更快找到答案。
+从手写 while 循环到 LangGraph，本质是从"命令式编程"到"声明式编排"的转变。我们告诉框架"用这些工具、用这个提示"，框架负责"怎么循环、怎么判断、怎么处理错误"。
+
+至此，我们的 AI 智能体有了完整的架构：LangGraph 编排工作流，10 个工具各司其职，长期记忆跨会话记住用户。下一步就是接入微信，让它真正"活"起来。
