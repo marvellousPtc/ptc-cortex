@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
     "pg",
     "pdf-parse",
     "xlsx",
-    "@langchain/langgraph",
   ],
 };
 
