@@ -1,6 +1,6 @@
 /*
  * :file description: 
- * :name: /langchain-chat/src/app/api/chat/route.ts
+ * :name: /ptc-cortex/src/app/api/chat/route.ts
  * :author: PTC
  * :copyright: (c) 2026, Tungee
  * :date created: 2026-02-11 17:36:21

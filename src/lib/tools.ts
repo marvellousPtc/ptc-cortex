@@ -1,6 +1,6 @@
 /*
  * :file description: 
- * :name: /langchain-chat/src/lib/tools.ts
+ * :name: /ptc-cortex/src/lib/tools.ts
  * :author: PTC
  * :copyright: (c) 2026, Tungee
  * :date created: 2026-02-12 10:27:29

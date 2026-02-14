@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LangChain Chat - AI 聊天机器人",
-  description: "基于 LangChain 的 AI 聊天机器人，学习项目",
+  title: "PTC Cortex - AI 智能中枢",
+  description: "PTC 的 AI 能力中心，为所有项目提供智能服务",
 };
 
 export default function RootLayout({

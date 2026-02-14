@@ -161,7 +161,7 @@ export default function Home() {
           <div className="p-4 space-y-3">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-linear-to-br from-violet-500 to-blue-500 flex items-center justify-center text-sm font-bold text-white">AI</div>
-              <span className="text-sm font-semibold">LangChain Chat</span>
+              <span className="text-sm font-semibold">PTC Cortex</span>
             </div>
             <button
               onClick={() => setPersonaPickerOpen(true)}
@@ -212,7 +212,7 @@ export default function Home() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={sidebarOpen ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} /></svg>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-medium truncate">{currentSession ? currentSession.title : "LangChain Chat"}</h1>
+            <h1 className="text-sm font-medium truncate">{currentSession ? currentSession.title : "PTC Cortex"}</h1>
             {currentPersona && <p className="text-xs text-ink-muted truncate">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
           </div>
           {/* Theme toggle */}

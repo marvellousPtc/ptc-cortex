@@ -72,7 +72,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            PROJECT_PATH="${{ secrets.LANGCHAIN_PROJECT_PATH || '/ptc/langchain-chat' }}"
+            PROJECT_PATH="${{ secrets.CORTEX_PROJECT_PATH || '/ptc/ptc-cortex' }}"
 
             # 备份 .env.local（含 API 密钥，不能丢）
             if [ -f "$PROJECT_PATH/.env.local" ]; then
@@ -128,11 +128,11 @@ jobs:
             pnpm rebuild better-sqlite3
 
             # 重启 PM2
-            if pm2 describe langchain-chat > /dev/null 2>&1; then
+            if pm2 describe ptc-cortex > /dev/null 2>&1; then
               pm2 reload ecosystem.config.js --update-env
             else
               pm2 start ecosystem.config.js
             fi
             pm2 save
 
-            echo "✅ langchain-chat 部署完成！"
+            echo "✅ ptc-cortex 部署完成！"

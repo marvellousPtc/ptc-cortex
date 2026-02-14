@@ -1,10 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: 'langchain-chat',
+      name: 'ptc-cortex',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -H 0.0.0.0 -p 3001',
-      cwd: '/ptc/langchain-chat',
+      cwd: '/ptc/ptc-cortex',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
