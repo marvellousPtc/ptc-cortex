@@ -1,17 +1,12 @@
 import { getPool } from "./pg";
 
 /**
- * ========== 第四课：持久化记忆（PostgreSQL 版） ==========
- *
- * 改用 PostgreSQL 替代 SQLite：
- * - 不需要编译原生模块（告别 node-gyp）
- * - 和博客数据库共用一个 PG 实例，统一技术栈
- * - 天然支持多实例部署和并发
+ * ========== 持久化记忆（PostgreSQL 版 · 按用户隔离） ==========
  *
  * 数据库设计：
- * - sessions 表：管理会话（对应微信里的"一个聊天窗口"）
- * - messages 表：存储每条消息（关联到某个会话）
- * - custom_personas 表：自定义角色
+ * - chat_sessions 表：管理会话，通过 user_id 隔离不同用户
+ * - chat_messages 表：存储每条消息（关联到某个会话）
+ * - chat_custom_personas 表：自定义角色，按 user_id 隔离
  */
 
 // 标记是否已初始化表
@@ -23,14 +18,21 @@ async function ensureTables() {
 
   const pool = getPool();
   await pool.query(`
-    -- 会话表：每个对话一条记录
+    -- 会话表：每个对话一条记录，user_id 标识归属用户
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
       title TEXT NOT NULL DEFAULT '新对话',
       persona TEXT NOT NULL DEFAULT 'assistant',
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
+
+    -- 兼容已有表：如果 user_id 列不存在则添加
+    ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
+
+    -- 用户索引
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id);
 
     -- 消息表：每条聊天消息一条记录
     CREATE TABLE IF NOT EXISTS chat_messages (
@@ -41,9 +43,10 @@ async function ensureTables() {
       created_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- 自定义角色表
+    -- 自定义角色表，user_id 标识归属用户
     CREATE TABLE IF NOT EXISTS chat_custom_personas (
       id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       emoji TEXT NOT NULL DEFAULT '🤖',
       description TEXT NOT NULL DEFAULT '',
@@ -51,6 +54,10 @@ async function ensureTables() {
       temperature REAL NOT NULL DEFAULT 0.7,
       created_at TIMESTAMP DEFAULT NOW()
     );
+
+    -- 兼容已有表
+    ALTER TABLE chat_custom_personas ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
+    CREATE INDEX IF NOT EXISTS idx_chat_custom_personas_user ON chat_custom_personas(user_id);
   `);
   tablesInitialized = true;
 }
@@ -59,6 +66,7 @@ async function ensureTables() {
 
 export interface Session {
   id: string;
+  user_id: string;
   title: string;
   persona: string;
   created_at: string;
@@ -75,6 +83,7 @@ export interface Message {
 
 export interface CustomPersona {
   id: string;
+  user_id: string;
   name: string;
   emoji: string;
   description: string;
@@ -87,37 +96,40 @@ export interface CustomPersona {
 
 /** 创建新会话 */
 export async function createSession(
-  persona: string = "assistant"
+  persona: string = "assistant",
+  userId: string
 ): Promise<Session> {
   await ensureTables();
   const pool = getPool();
   const id = generateId();
   await pool.query(
-    "INSERT INTO chat_sessions (id, persona) VALUES ($1, $2)",
-    [id, persona]
+    "INSERT INTO chat_sessions (id, user_id, persona) VALUES ($1, $2, $3)",
+    [id, userId, persona]
   );
-  return (await getSession(id))!;
+  return (await getSession(id, userId))!;
 }
 
-/** 获取单个会话 */
+/** 获取单个会话（校验 user_id 防越权） */
 export async function getSession(
-  id: string
+  id: string,
+  userId: string
 ): Promise<Session | undefined> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM chat_sessions WHERE id = $1",
-    [id]
+    "SELECT * FROM chat_sessions WHERE id = $1 AND user_id = $2",
+    [id, userId]
   );
   return rows[0] as Session | undefined;
 }
 
-/** 获取所有会话（按最近更新排序） */
-export async function getAllSessions(): Promise<Session[]> {
+/** 获取某用户所有会话（按最近更新排序） */
+export async function getAllSessions(userId: string): Promise<Session[]> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM chat_sessions ORDER BY updated_at DESC"
+    "SELECT * FROM chat_sessions WHERE user_id = $1 ORDER BY updated_at DESC",
+    [userId]
   );
   return rows as Session[];
 }
@@ -125,34 +137,42 @@ export async function getAllSessions(): Promise<Session[]> {
 /** 更新会话标题 */
 export async function updateSessionTitle(
   id: string,
-  title: string
+  title: string,
+  userId: string
 ): Promise<void> {
   await ensureTables();
   const pool = getPool();
   await pool.query(
-    "UPDATE chat_sessions SET title = $1, updated_at = NOW() WHERE id = $2",
-    [title, id]
+    "UPDATE chat_sessions SET title = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+    [title, id, userId]
   );
 }
 
 /** 更新会话的人设 */
 export async function updateSessionPersona(
   id: string,
-  persona: string
+  persona: string,
+  userId: string
 ): Promise<void> {
   await ensureTables();
   const pool = getPool();
   await pool.query(
-    "UPDATE chat_sessions SET persona = $1, updated_at = NOW() WHERE id = $2",
-    [persona, id]
+    "UPDATE chat_sessions SET persona = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+    [persona, id, userId]
   );
 }
 
-/** 删除会话（级联删除消息） */
-export async function deleteSession(id: string): Promise<void> {
+/** 删除会话（级联删除消息，校验 user_id） */
+export async function deleteSession(
+  id: string,
+  userId: string
+): Promise<void> {
   await ensureTables();
   const pool = getPool();
-  await pool.query("DELETE FROM chat_sessions WHERE id = $1", [id]);
+  await pool.query(
+    "DELETE FROM chat_sessions WHERE id = $1 AND user_id = $2",
+    [id, userId]
+  );
 }
 
 // ===== 消息相关操作 =====
@@ -215,24 +235,28 @@ export async function createCustomPersona(
   emoji: string,
   description: string,
   prompt: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  userId: string
 ): Promise<CustomPersona> {
   await ensureTables();
   const pool = getPool();
   const id = "custom_" + generateId();
   const { rows } = await pool.query(
-    "INSERT INTO chat_custom_personas (id, name, emoji, description, prompt, temperature) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-    [id, name, emoji, description, prompt, temperature]
+    "INSERT INTO chat_custom_personas (id, user_id, name, emoji, description, prompt, temperature) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+    [id, userId, name, emoji, description, prompt, temperature]
   );
   return rows[0] as CustomPersona;
 }
 
-/** 获取所有自定义角色 */
-export async function getAllCustomPersonas(): Promise<CustomPersona[]> {
+/** 获取某用户所有自定义角色 */
+export async function getAllCustomPersonas(
+  userId: string
+): Promise<CustomPersona[]> {
   await ensureTables();
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM chat_custom_personas ORDER BY created_at DESC"
+    "SELECT * FROM chat_custom_personas WHERE user_id = $1 ORDER BY created_at DESC",
+    [userId]
   );
   return rows as CustomPersona[];
 }
@@ -250,11 +274,17 @@ export async function getCustomPersona(
   return rows[0] as CustomPersona | undefined;
 }
 
-/** 删除自定义角色 */
-export async function deleteCustomPersona(id: string): Promise<void> {
+/** 删除自定义角色（校验 user_id） */
+export async function deleteCustomPersona(
+  id: string,
+  userId: string
+): Promise<void> {
   await ensureTables();
   const pool = getPool();
-  await pool.query("DELETE FROM chat_custom_personas WHERE id = $1", [id]);
+  await pool.query(
+    "DELETE FROM chat_custom_personas WHERE id = $1 AND user_id = $2",
+    [id, userId]
+  );
 }
 
 // ===== 工具函数 =====

@@ -18,6 +18,7 @@ import {
   updateSessionTitle,
   getCustomPersona,
 } from "@/lib/db";
+import { getCurrentUserId } from "@/lib/auth-check";
 import { createAgent } from "@/lib/graph";
 import { ALL_TOOLS, webSearchTool } from "@/lib/tools";
 import {
@@ -98,6 +99,14 @@ const PERSONAS: Record<
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getCurrentUserId(request);
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "未登录" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const { message, sessionId, webSearchEnabled = false } = await request.json();
 
     if (!sessionId) {
@@ -107,7 +116,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const session = await getSession(sessionId);
+    const session = await getSession(sessionId, userId);
     if (!session) {
       return new Response(
         JSON.stringify({ error: "会话不存在" }),
@@ -280,7 +289,7 @@ export async function POST(request: NextRequest) {
           if (session.title === "新对话" && fullReply.length > 0) {
             const title =
               fullReply.replace(/[#*\n]/g, "").slice(0, 20) + "...";
-            await updateSessionTitle(sessionId, title);
+            await updateSessionTitle(sessionId, title, userId);
           }
 
           // ====== 长期记忆：异步提取关键信息 ======
