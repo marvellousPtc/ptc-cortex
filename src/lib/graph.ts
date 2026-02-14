@@ -25,7 +25,7 @@ import { BaseMessage } from "@langchain/core/messages";
 import { StructuredToolInterface } from "@langchain/core/tools";
 
 /**
- * 创建一个 ReAct Agent
+ * 创建一个 ReAct Agent（工具模式）
  *
  * @param systemPrompt - AI 的人设/系统提示
  * @param temperature - 温度参数
@@ -54,6 +54,22 @@ export function createAgent(
   });
 
   return agent;
+}
+
+/**
+ * 创建推理模型实例（深度推理模式，无工具）
+ *
+ * deepseek-reasoner 会返回 reasoning_content（思考链），
+ * 但不支持 function calling，所以不使用 Agent。
+ */
+export function createReasoningModel() {
+  return new ChatOpenAI({
+    model: "deepseek-reasoner",
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    configuration: {
+      baseURL: process.env.DEEPSEEK_BASE_URL,
+    },
+  });
 }
 
 /**

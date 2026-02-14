@@ -1,3 +1,12 @@
+/*
+ * :date created: 2026-02-14 16:10:21
+ * :file description: 
+ * :name: /langchain-chat/src/lib/mcp-client.ts
+ * :date last edited: 2026-02-14 22:51:16
+ * :last editor: PTC
+ * :author: PTC
+ * :copyright: (c) 2026, Tungee
+ */
 /**
  * ========== MCP 客户端集成层 ==========
  *
@@ -176,7 +185,18 @@ export async function getMcpTools(userId: string): Promise<{
       mcpServers: mcpServerConfigs as Record<string, never>,
     });
 
-    const tools = await client.getTools();
+    const rawTools = await client.getTools();
+
+    // Sanitize tool names: DeepSeek API requires names matching ^[a-zA-Z0-9_-]+$
+    for (const tool of rawTools) {
+      const original = tool.name;
+      tool.name = tool.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      if (tool.name !== original) {
+        console.log(`🔧 MCP 工具名修正: "${original}" → "${tool.name}"`);
+      }
+    }
+
+    const tools = rawTools;
 
     console.log(
       `🔌 MCP: 已加载 ${tools.length} 个工具，来自 ${Object.keys(mcpServerConfigs).length} 个 server`

@@ -132,6 +132,19 @@ const getToolIcon = (name: string) => {
 };
 
 const getToolDisplayName = (name: string) => {
+  const n = name.toLowerCase();
+  if (n.includes("search") || n.includes("web") || n.includes("brave")) return "联网搜索";
+  if (n.includes("image") || n.includes("generate") || n.includes("jimeng")) return "图片生成";
+  if (n.includes("weather")) return "天气查询";
+  if (n.includes("time") || n.includes("clock")) return "时间查询";
+  if (n.includes("calc")) return "数学计算";
+  if (n.includes("file") || n.includes("parse") || n.includes("filesystem")) return "文件处理";
+  if (n.includes("knowledge") || n.includes("memory")) return "知识检索";
+  if (n.includes("blog") || n.includes("db") || n.includes("sql") || n.includes("query")) return "数据查询";
+  if (n.includes("browser") || n.includes("playwright") || n.includes("navigate") || n.includes("screenshot") || n.includes("snapshot")) return "浏览器操作";
+  if (n.includes("github")) return "GitHub";
+  if (n.includes("fetch")) return "网页获取";
+  if (n.includes("thinking") || n.includes("sequen")) return "深度思考";
   const parts = name.split("__");
   return parts.length > 1 ? parts.slice(1).join(" ") : name;
 };
@@ -156,6 +169,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [reasoningMode, setReasoningMode] = useState(false);
   const [customPersonas, setCustomPersonas] = useState<CustomPersona[]>([]);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
   const [newPersona, setNewPersona] = useState({ name: "", emoji: "🤖", description: "", prompt: "", temperature: 0.7 });
@@ -179,6 +193,8 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
   /* ====== Theme ====== */
   useEffect(() => {
@@ -204,7 +220,23 @@ export default function Home() {
     fetch(`${BASE}/api/user`).then(r => r.ok ? r.json() : null).then(d => { if (d) setUserInfo(d); }).catch(() => {});
   }, []);
   useEffect(() => { if (currentSessionId) loadMessages(currentSessionId); }, [currentSessionId, loadMessages]);
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    if (!userScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, userScrolledUp]);
+
+  const handleMessagesScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setUserScrolledUp(distanceFromBottom > 150);
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setUserScrolledUp(false);
+  };
 
   const allPersonas = [
     ...BUILTIN_PERSONAS.map((p) => ({ ...p, isBuiltin: true })),
@@ -322,7 +354,7 @@ export default function Home() {
     setThinkingToggled(new Set());
     setToolToggled(new Set());
     try {
-      const response = await fetch(`${BASE}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userMessage.content, sessionId: currentSessionId, webSearchEnabled }) });
+      const response = await fetch(`${BASE}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userMessage.content, sessionId: currentSessionId, webSearchEnabled, reasoningMode }) });
       if (!response.ok) { const data = await response.json(); setMessages([...newMessages, { role: "assistant", content: `错误: ${data.error}` }]); return; }
       const reader = response.body?.getReader(); const decoder = new TextDecoder();
       if (!reader) throw new Error("无法获取响应流");
@@ -450,7 +482,6 @@ export default function Home() {
   const SendIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
   const ChevronIcon = <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
   const SpinnerIcon = <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" /><path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
-  const BrainIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>;
   const CheckIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>;
 
   return (
@@ -462,12 +493,12 @@ export default function Home() {
           {/* Logo + New Chat */}
           <div className="p-4 space-y-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-violet-500 to-blue-500 flex items-center justify-center text-sm font-bold text-white">AI</div>
+              <div className="w-8 h-8 rounded-lg bg-ink flex items-center justify-center text-sm font-bold text-page">AI</div>
               <span className="text-sm font-semibold">PTC Cortex</span>
             </div>
             <button
               onClick={() => setPersonaPickerOpen(true)}
-              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl bg-card hover:bg-card-hover border border-line px-4 py-2.5 text-sm text-ink-secondary hover:text-ink transition-all hover:shadow-sm"
+              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl bg-card-hover hover:bg-line px-4 py-2.5 text-sm text-ink-secondary hover:text-ink transition-colors"
             >
               {PlusIcon} 新建对话
             </button>
@@ -517,7 +548,7 @@ export default function Home() {
       {/* ===== Main ===== */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="shrink-0 flex items-center gap-3 px-4 py-3 bg-panel/80 backdrop-blur-xl border-b border-line z-10">
+        <header className="shrink-0 flex items-center gap-3 px-5 py-3 bg-panel border-b border-line z-10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={sidebarOpen ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} /></svg>
           </button>
@@ -526,7 +557,7 @@ export default function Home() {
             {currentPersona && <p className="text-xs text-ink-muted truncate">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
           </div>
           {/* Back to blog */}
-          <a href="/" className="btn-press shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs text-ink-muted hover:text-ink bg-card hover:bg-card-hover border border-line transition-all hover:shadow-sm" title="返回文章阅读">
+          <a href="/" className="btn-press shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-colors" title="返回文章阅读">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             返回文章
           </a>
@@ -536,7 +567,7 @@ export default function Home() {
           </button>
           {/* Analyze */}
           <button onClick={() => { setAnalyzeOpen(true); setAnalysisResult(null); }}
-            className="btn-press shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs text-ink-muted hover:text-ink bg-card hover:bg-card-hover border border-line transition-all hover:shadow-sm">
+            className="btn-press shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
             文本分析
           </button>
@@ -546,7 +577,7 @@ export default function Home() {
               {userInfo.image ? (
                 <img src={userInfo.image} alt={userInfo.name} className="w-8 h-8 rounded-full object-cover border border-line" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-500 to-blue-500 flex items-center justify-center text-xs font-bold text-white">
+                <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center text-xs font-bold text-page">
                   {userInfo.name.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -556,31 +587,37 @@ export default function Home() {
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={handleMessagesScroll}>
+          {/* Scroll to bottom button */}
+          {userScrolledUp && loading && (
+            <button onClick={scrollToBottom} className="sticky top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium bg-card/90 backdrop-blur border border-line shadow-lg hover:bg-card-hover transition-all" style={{ marginBottom: "-32px" }}>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+              回到最新
+            </button>
+          )}
+          <div className="mx-auto max-w-3xl px-4 py-6 space-y-5">
             {!currentSessionId ? (
-              <div className="flex flex-col items-center justify-center py-24">
-                <div className="w-20 h-20 rounded-2xl bg-linear-to-br from-violet-500 via-blue-500 to-cyan-400 flex items-center justify-center text-3xl mb-6 shadow-lg shadow-violet-500/20">✨</div>
-                <h2 className="text-2xl font-semibold mb-2">开始一段新对话</h2>
-                <p className="text-sm text-ink-muted mb-8 text-center max-w-md">支持联网搜索、图片生成、文件解析、知识库检索等多种能力</p>
+              <div className="flex flex-col items-center justify-center py-32 select-none">
+                <div className="welcome-icon text-5xl mb-5">✨</div>
+                <h2 className="text-lg font-semibold tracking-tight mb-1.5">开始一段新对话</h2>
+                <p className="text-[13px] text-ink-muted mb-7">支持联网搜索、图片生成、文件解析等能力</p>
                 <button onClick={() => setPersonaPickerOpen(true)}
-                  className="btn-press rounded-2xl bg-linear-to-r from-violet-600 to-blue-600 px-8 py-3 text-sm font-medium text-white hover:shadow-lg hover:shadow-violet-500/25 transition-all hover:-translate-y-0.5">
+                  className="btn-press rounded-full bg-ink text-page px-5 py-2 text-[13px] font-medium hover:opacity-85 transition-opacity">
                   选择角色开始
                 </button>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24">
-                <div className="w-16 h-16 rounded-2xl bg-card border border-line flex items-center justify-center text-3xl mb-5">{currentPersona?.emoji || "✨"}</div>
-                <h2 className="text-lg font-medium mb-1">{currentPersona?.name}</h2>
-                <p className="text-sm text-ink-muted">{currentPersona?.desc}</p>
-                <p className="text-xs text-ink-faint mt-4">发送消息开始对话</p>
+              <div className="flex flex-col items-center justify-center py-32 select-none">
+                <div className="text-4xl mb-4">{currentPersona?.emoji || "✨"}</div>
+                <h2 className="text-base font-semibold tracking-tight mb-1">{currentPersona?.name}</h2>
+                <p className="text-[13px] text-ink-muted">{currentPersona?.desc}</p>
               </div>
             ) : (
               messages.map((msg, index) => (
-                <div key={index} className={`msg-enter flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div key={index} className={`msg-enter flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}>
                   {/* AI Avatar */}
                   {msg.role === "assistant" && (
-                    <div className="shrink-0 w-8 h-8 rounded-lg border border-line flex items-center justify-center text-sm mt-0.5" style={{ background: `linear-gradient(135deg, var(--c-ai-avatar-from), var(--c-ai-avatar-to))` }}>
+                    <div className="shrink-0 w-7 h-7 rounded-full bg-card-hover flex items-center justify-center text-sm mt-1">
                       {currentPersona?.emoji || "✨"}
                     </div>
                   )}
@@ -590,69 +627,54 @@ export default function Home() {
                     <div className="max-w-[80%] space-y-2 min-w-0">
                       {/* ── Thinking Block ── */}
                       {msg.thinking && msg.thinking.content && (
-                        <div className="thinking-block rounded-xl overflow-hidden border" style={{ borderColor: "var(--c-accent-border)", background: "var(--c-accent-soft)" }}>
+                        <div className="thinking-block">
                           <button
                             onClick={() => toggleThinking(index)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:opacity-80 transition-opacity"
+                            className="flex items-center gap-1.5 py-1 text-xs hover:opacity-70 transition-opacity"
                             style={{ color: "var(--c-accent-text)" }}
                           >
-                            {!msg.thinking.isComplete ? SpinnerIcon : BrainIcon}
-                            <span className="font-medium">{msg.thinking.isComplete ? "思考过程" : "思考中..."}</span>
-                            <span className={`ml-auto transition-transform duration-200 ${isThinkingExpanded(index, msg.thinking.isComplete) ? "rotate-180" : ""}`}>{ChevronIcon}</span>
+                            {!msg.thinking.isComplete ? SpinnerIcon : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                            )}
+                            <span className="font-medium">{msg.thinking.isComplete ? "已深度思考" : "正在思考"}{!msg.thinking.isComplete && <span className="loading-dots"></span>}</span>
+                            <span className={`transition-transform duration-200 ${isThinkingExpanded(index, msg.thinking.isComplete) ? "rotate-180" : ""}`}>{ChevronIcon}</span>
                           </button>
                           {isThinkingExpanded(index, msg.thinking.isComplete) && (
-                            <div className="thinking-content px-3 pb-2.5 text-xs leading-relaxed whitespace-pre-wrap border-t" style={{ color: "var(--c-ink-secondary)", borderColor: "var(--c-accent-border)", opacity: 0.8 }}>
+                            <div className="thinking-content mt-2 pl-3 border-l-2 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-ink-secondary)", borderColor: "var(--c-accent-border)" }}>
                               {msg.thinking.content}
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* ── Tool Call Cards ── */}
+                      {/* ── Tool Calls ── */}
                       {msg.toolCalls && msg.toolCalls.length > 0 && (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {msg.toolCalls.map((tc, tcIdx) => {
                             const key = `${index}-${tcIdx}`;
                             const expanded = isToolExpanded(key, tc.isComplete);
+                            const inputSummary = Object.values(tc.input).map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(", ").slice(0, 40);
                             return (
-                              <div key={tcIdx} className="tool-call-card rounded-xl border overflow-hidden" style={{ borderColor: "var(--c-line)", background: "var(--c-card)" }}>
+                              <div key={tcIdx}>
                                 <button
                                   onClick={() => toggleTool(key)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:opacity-80 transition-opacity"
+                                  className="flex items-center gap-1.5 py-1 text-xs hover:opacity-70 transition-opacity"
+                                  style={{ color: "var(--c-ink-secondary)" }}
                                 >
                                   {!tc.isComplete ? (
-                                    <span className="text-accent-text">{SpinnerIcon}</span>
+                                    <span style={{ color: "var(--c-accent-text)" }}>{SpinnerIcon}</span>
                                   ) : (
                                     <span className="text-green-text">{CheckIcon}</span>
                                   )}
-                                  <span className="shrink-0">{getToolIcon(tc.name)}</span>
-                                  <span className="font-medium text-ink-secondary truncate">{getToolDisplayName(tc.name)}</span>
-                                  {tc.isComplete && tc.input && Object.keys(tc.input).length > 0 && (
-                                    <span className="text-ink-faint truncate max-w-[180px] hidden sm:inline">
-                                      {Object.values(tc.input).map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(", ").slice(0, 50)}
-                                    </span>
-                                  )}
-                                  <span className={`ml-auto transition-transform duration-200 shrink-0 ${expanded ? "rotate-180" : ""}`}>{ChevronIcon}</span>
+                                  <span>{getToolIcon(tc.name)}</span>
+                                  <span className="font-medium">{getToolDisplayName(tc.name)}</span>
+                                  {inputSummary && <span className="text-ink-faint truncate max-w-[200px]">{inputSummary}</span>}
+                                  {!tc.isComplete && !tc.result && <span className="loading-dots text-ink-faint"></span>}
+                                  <span className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>{ChevronIcon}</span>
                                 </button>
-                                {expanded && (
-                                  <div className="tool-detail-content px-3 pb-2.5 text-xs border-t" style={{ borderColor: "var(--c-line)" }}>
-                                    {Object.keys(tc.input).length > 0 && (
-                                      <div className="mt-1.5">
-                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">输入参数</span>
-                                        <pre className="text-ink-muted mt-0.5 whitespace-pre-wrap break-all leading-relaxed" style={{ maxHeight: "120px", overflowY: "auto" }}>{JSON.stringify(tc.input, null, 2)}</pre>
-                                      </div>
-                                    )}
-                                    {tc.result && (
-                                      <div className="mt-2">
-                                        <span className="text-ink-faint text-[10px] uppercase tracking-wide">输出结果</span>
-                                        <pre className="text-ink-muted mt-0.5 whitespace-pre-wrap break-all leading-relaxed" style={{ maxHeight: "150px", overflowY: "auto" }}>{tc.result}</pre>
-                                      </div>
-                                    )}
-                                    {!tc.isComplete && !tc.result && (
-                                      <div className="mt-1.5 text-ink-faint">
-                                        <span className="loading-dots">工具执行中</span>
-                                      </div>
-                                    )}
+                                {expanded && tc.result && (
+                                  <div className="tool-detail-content mt-1 pl-3 border-l-2 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-ink-secondary)", borderColor: "var(--c-line)", maxHeight: "200px", overflowY: "auto" }}>
+                                    {tc.result}
                                   </div>
                                 )}
                               </div>
@@ -663,19 +685,19 @@ export default function Home() {
 
                       {/* ── Content ── */}
                       {msg.content && (
-                        <div className="rounded-2xl border px-4 py-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)", boxShadow: "var(--c-shadow)" }}>
-                          <div className="markdown-body text-sm leading-relaxed"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
-                                              img: ({ src, alt }) => (
-                                                <img src={src} alt={alt || ''} className="rounded-lg max-w-full max-h-[400px] object-contain my-2" />
-                                              )
-                                            }}>{msg.content}</ReactMarkdown></div>
+                        <div className="markdown-body text-[14px] leading-[1.7]">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+                            img: ({ src, alt }) => (
+                              <img src={src} alt={alt || ''} className="rounded-lg max-w-full max-h-[400px] object-contain my-2" />
+                            )
+                          }}>{msg.content}</ReactMarkdown>
                         </div>
                       )}
                     </div>
                   ) : (
                     /* User message */
-                    <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-linear-to-r from-violet-600 to-blue-600 text-white shadow-md shadow-violet-500/15">
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                    <div className="max-w-[75%] rounded-2xl px-4 py-2.5" style={{ background: "var(--c-user-bubble)", color: "var(--c-page)" }}>
+                      <p className="whitespace-pre-wrap text-[14px] leading-[1.65]">{msg.content}</p>
                     </div>
                   )}
 
@@ -684,7 +706,7 @@ export default function Home() {
                     userInfo?.image ? (
                       <img src={userInfo.image} alt={userInfo.name} className="shrink-0 w-8 h-8 rounded-lg object-cover mt-0.5" />
                     ) : (
-                      <div className="shrink-0 w-8 h-8 rounded-lg bg-linear-to-br from-violet-600 to-blue-600 flex items-center justify-center text-xs font-bold text-white mt-0.5">
+                      <div className="shrink-0 w-7 h-7 rounded-full bg-ink flex items-center justify-center text-[11px] font-semibold text-page mt-1">
                         {userInfo?.name?.charAt(0).toUpperCase() || "👤"}
                       </div>
                     )
@@ -695,10 +717,10 @@ export default function Home() {
 
             {loading && messages[messages.length - 1]?.role !== "assistant" && (
               <div className="flex gap-3 items-start">
-                <div className="w-8 h-8 rounded-lg border border-line flex items-center justify-center text-sm" style={{ background: `linear-gradient(135deg, var(--c-ai-avatar-from), var(--c-ai-avatar-to))` }}>
+                <div className="w-7 h-7 rounded-full bg-card-hover flex items-center justify-center text-sm">
                   {currentPersona?.emoji || "✨"}
                 </div>
-                <div className="rounded-2xl border px-4 py-3 flex items-center gap-3" style={{ background: "var(--c-ai-bubble)", borderColor: "var(--c-ai-bubble-border)" }}>
+                <div className="flex items-center gap-2.5">
                   <div className="typing-wave flex items-center gap-[3px]">
                     <span className="typing-dot" />
                     <span className="typing-dot" />
@@ -716,34 +738,42 @@ export default function Home() {
         {currentSessionId && (
           <div className="shrink-0 px-4 pb-4 pt-2">
             <div className="mx-auto max-w-3xl">
-              <div className="rounded-2xl bg-card border border-line p-2 flex items-end gap-2 focus-within:border-violet-500/50 focus-within:shadow-lg focus-within:shadow-violet-500/5 transition-all duration-200" style={{ boxShadow: "var(--c-shadow)" }}>
-                <div className="flex gap-1 pl-1">
-                  <button onClick={() => setWebSearchEnabled(!webSearchEnabled)} disabled={loading}
-                    className={`btn-press rounded-xl p-2 transition-all disabled:opacity-30 ${webSearchEnabled ? "text-green-text bg-green-soft" : "text-ink-faint hover:text-ink-muted hover:bg-card-hover"}`}
-                    title={webSearchEnabled ? "联网搜索已开启" : "联网搜索已关闭"}>
-                    {GlobeIcon}
-                  </button>
-                  <input ref={fileInputRef} type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt" onChange={handleFileUpload} className="hidden" />
-                  <button onClick={() => fileInputRef.current?.click()} disabled={loading}
-                    className="btn-press rounded-xl p-2 text-ink-faint hover:text-ink-muted hover:bg-card-hover transition-all disabled:opacity-30" title="上传文件">
-                    {ClipIcon}
-                  </button>
+              <div className="rounded-2xl border border-line bg-card overflow-hidden focus-within:border-accent-text/40 transition-colors duration-200" style={{ boxShadow: "var(--c-shadow)" }}>
+                {/* Input row */}
+                <div className="px-4 pt-3 pb-2">
+                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                    placeholder={`给 ${currentPersona?.name || "AI"} 发送消息`} className="w-full bg-transparent text-sm placeholder-ink-faint outline-none" disabled={loading} />
                 </div>
-                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder="输入消息..." className="flex-1 bg-transparent text-sm placeholder-ink-faint outline-none py-2 px-1" disabled={loading} />
-                <button onClick={sendMessage} disabled={loading || !input.trim()}
-                  className="btn-press shrink-0 rounded-xl bg-linear-to-r from-violet-600 to-blue-600 p-2.5 text-white transition-all hover:shadow-lg hover:shadow-violet-500/20 disabled:opacity-30">
-                  {SendIcon}
-                </button>
+                {/* Bottom toolbar */}
+                <div className="flex items-center justify-between px-3 pb-2.5">
+                  {/* Left: pill toggles */}
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setReasoningMode(!reasoningMode)} disabled={loading}
+                      className={`btn-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all disabled:opacity-30 ${reasoningMode ? "border-violet-500/50 text-violet-500 bg-violet-500/10" : "border-line text-ink-muted hover:text-ink-secondary hover:border-ink-faint hover:bg-card-hover"}`}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                      深度思考
+                    </button>
+                    <button onClick={() => setWebSearchEnabled(!webSearchEnabled)} disabled={loading}
+                      className={`btn-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all disabled:opacity-30 ${webSearchEnabled ? "border-blue-500/50 text-blue-500 bg-blue-500/10" : "border-line text-ink-muted hover:text-ink-secondary hover:border-ink-faint hover:bg-card-hover"}`}>
+                      {GlobeIcon}
+                      联网搜索
+                    </button>
+                  </div>
+                  {/* Right: attachment + send */}
+                  <div className="flex items-center gap-1.5">
+                    <input ref={fileInputRef} type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt" onChange={handleFileUpload} className="hidden" />
+                    <button onClick={() => fileInputRef.current?.click()} disabled={loading}
+                      className="btn-press rounded-full p-2 text-ink-faint hover:text-ink-muted hover:bg-card-hover transition-all disabled:opacity-30" title="上传文件">
+                      {ClipIcon}
+                    </button>
+                    <button onClick={sendMessage} disabled={loading || !input.trim()}
+                      className="btn-press shrink-0 rounded-full bg-ink text-page p-2 transition-opacity hover:opacity-80 disabled:opacity-20">
+                      {SendIcon}
+                    </button>
+                  </div>
+                </div>
               </div>
-              {webSearchEnabled && (
-                <div className="flex items-center gap-1 mt-2 px-2">
-                  <span className="flex items-center gap-1 text-[11px] text-green-text">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-text animate-pulse"></span>
-                    联网搜索已开启
-                  </span>
-                </div>
-              )}
+              <p className="text-center text-[10px] text-ink-faint mt-2">内容由 AI 生成，请仔细甄别</p>
             </div>
           </div>
         )}

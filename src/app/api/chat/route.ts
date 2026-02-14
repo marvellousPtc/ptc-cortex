@@ -5,7 +5,7 @@
  * :copyright: (c) 2026, Tungee
  * :date created: 2026-02-11 17:36:21
  * :last editor: PTC
- * :date last edited: 2026-02-14 21:41:30
+ * :date last edited: 2026-02-14 22:10:38
  */
 import { NextRequest } from "next/server";
 import { ChatOpenAI } from "@langchain/openai";
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { message, sessionId, webSearchEnabled = false } = await request.json();
+    const { message, sessionId, webSearchEnabled = false, reasoningMode = false } = await request.json();
 
     if (!sessionId) {
       return new Response(
@@ -160,6 +160,174 @@ export async function POST(request: NextRequest) {
     });
     const dateContext = `\n[当前日期: ${dateStr}]`;
 
+    // 构建消息列表（历史 + 当前输入）
+    const inputMessages = [
+      ...historyMessages.map((msg) =>
+        msg.role === "user"
+          ? new HumanMessage(msg.content)
+          : new AIMessage(msg.content)
+      ),
+      new HumanMessage(message),
+    ];
+
+    // ====== 推理模式：使用 deepseek-reasoner 直接调用 API ======
+    if (reasoningMode) {
+      console.log("🧠 推理模式启动");
+
+      const encoder = new TextEncoder();
+      let fullReply = "";
+
+      const sendSSE = (
+        controller: ReadableStreamDefaultController,
+        data: Record<string, unknown>
+      ) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          try {
+            // ── 如果同时开启了联网搜索，先用 Agent 搜集信息 ──
+            let searchContext = "";
+            if (webSearchEnabled) {
+              sendSSE(controller, { type: "tool_start", name: "web_search", input: { query: message } });
+              try {
+                const searchAgent = createAgent(
+                  "你是一个专业的信息搜集助手。你的任务是使用搜索工具尽可能多地收集相关信息。" +
+                  "请仔细阅读搜索结果中的所有内容（包括网页正文），提取关键事实、数据、观点，" +
+                  "整理成详细、结构化的参考资料。保留所有有价值的细节，不要省略。请用中文回复。",
+                  0.1,
+                  [webSearchTool]
+                );
+                const searchResult = await searchAgent.invoke({ messages: inputMessages });
+                const lastMsg = searchResult.messages[searchResult.messages.length - 1];
+                searchContext = typeof lastMsg.content === "string" ? lastMsg.content : "";
+                sendSSE(controller, { type: "tool_end", name: "web_search", result: searchContext.slice(0, 500) + "..." });
+                console.log("🔍 搜索结果已收集，长度:", searchContext.length);
+              } catch (searchErr) {
+                console.warn("搜索阶段出错:", searchErr);
+                sendSSE(controller, { type: "tool_end", name: "web_search", result: "搜索失败，将直接推理" });
+              }
+            }
+
+            // ── 构建推理请求的消息 ──
+            const systemPrompt = personaConfig.prompt + dateContext + memoryContext +
+              (searchContext ? `\n\n[以下是联网搜索获取的参考资料，请基于这些信息进行深度推理]\n${searchContext}` : "");
+
+            const apiMessages = [
+              { role: "system", content: systemPrompt },
+              ...historyMessages.map((msg) => ({
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+              })),
+              { role: "user" as const, content: message },
+            ];
+
+            // ── 直接调用 DeepSeek API（绕过 LangChain 以正确获取 reasoning_content）──
+            const apiResponse = await fetch(
+              `${process.env.DEEPSEEK_BASE_URL}/chat/completions`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+                },
+                body: JSON.stringify({
+                  model: "deepseek-reasoner",
+                  messages: apiMessages,
+                  stream: true,
+                }),
+              }
+            );
+
+            if (!apiResponse.ok) {
+              const errText = await apiResponse.text();
+              throw new Error(`DeepSeek API 错误 ${apiResponse.status}: ${errText}`);
+            }
+
+            const reader = apiResponse.body?.getReader();
+            if (!reader) throw new Error("无法获取推理响应流");
+
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let thinkingContent = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                const payload = trimmed.slice(6);
+                if (payload === "[DONE]") continue;
+
+                try {
+                  const parsed = JSON.parse(payload);
+                  const delta = parsed.choices?.[0]?.delta;
+                  if (!delta) continue;
+
+                  // 推理过程
+                  if (delta.reasoning_content) {
+                    thinkingContent += delta.reasoning_content;
+                    sendSSE(controller, { type: "thinking", content: delta.reasoning_content });
+                  }
+                  // 正式回答
+                  if (delta.content) {
+                    if (thinkingContent) {
+                      sendSSE(controller, { type: "thinking_end" });
+                      thinkingContent = "";
+                    }
+                    fullReply += delta.content;
+                    sendSSE(controller, { type: "content", content: delta.content });
+                  }
+                } catch { /* skip malformed JSON */ }
+              }
+            }
+
+            if (thinkingContent) {
+              sendSSE(controller, { type: "thinking_end" });
+            }
+
+            if (!fullReply) {
+              fullReply = "[AI 未生成回复]";
+              sendSSE(controller, { type: "content", content: fullReply });
+            }
+
+            sendSSE(controller, { type: "done" });
+            await addMessage(sessionId, "assistant", fullReply);
+
+            if (session.title === "新对话" && fullReply.length > 0) {
+              const title = fullReply.replace(/[#*\n]/g, "").slice(0, 20) + "...";
+              await updateSessionTitle(sessionId, title, userId);
+            }
+          } catch (err) {
+            console.error("推理模式错误:", err);
+            sendSSE(controller, {
+              type: "error",
+              content: `推理出错: ${err instanceof Error ? err.message : "未知错误"}`,
+            });
+            sendSSE(controller, { type: "done" });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(readableStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    // ====== 工具模式：使用 Agent + 工具 ======
     // 根据用户设置过滤工具
     let tools: StructuredToolInterface[] = webSearchEnabled
       ? [...ALL_TOOLS]
@@ -183,16 +351,6 @@ export async function POST(request: NextRequest) {
       personaConfig.temperature,
       tools
     );
-
-    // 构建消息列表（历史 + 当前输入）
-    const inputMessages = [
-      ...historyMessages.map((msg) =>
-        msg.role === "user"
-          ? new HumanMessage(msg.content)
-          : new AIMessage(msg.content)
-      ),
-      new HumanMessage(message),
-    ];
 
     // ====== SSE 流式输出 ======
     const encoder = new TextEncoder();
