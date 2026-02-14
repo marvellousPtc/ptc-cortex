@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -485,40 +486,38 @@ export default function Home() {
   const CheckIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>;
 
   return (
-    <div data-theme={theme} className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-300">
+    <div data-theme={theme} className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-200">
 
       {/* ===== Sidebar ===== */}
-      <aside className={`${sidebarOpen ? "w-72" : "w-0"} shrink-0 overflow-hidden transition-all duration-300`}>
-        <div className="flex h-full w-72 flex-col bg-panel border-r border-line">
-          {/* Logo + New Chat */}
-          <div className="p-4 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-ink flex items-center justify-center text-sm font-bold text-page">AI</div>
-              <span className="text-sm font-semibold">PTC Cortex</span>
+      <aside className={`${sidebarOpen ? "w-[280px]" : "w-0"} shrink-0 overflow-hidden transition-all duration-300 ease-out`}>
+        <div className="flex h-full w-[280px] flex-col bg-panel border-r border-line">
+          <div className="p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-ink flex items-center justify-center text-sm font-semibold text-panel">AI</div>
+              <span className="text-[15px] font-semibold tracking-tight">PTC Cortex</span>
             </div>
             <button
               onClick={() => setPersonaPickerOpen(true)}
-              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl bg-card-hover hover:bg-line px-4 py-2.5 text-sm text-ink-secondary hover:text-ink transition-colors"
+              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl bg-ink text-panel px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
             >
               {PlusIcon} 新建对话
             </button>
           </div>
 
-          {/* Session List */}
-          <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
-            {sessions.length === 0 && <p className="text-xs text-ink-faint text-center py-10">暂无对话</p>}
+          <div className="flex-1 overflow-y-auto px-3 space-y-0.5 min-h-0">
+            {sessions.length === 0 && <p className="text-[13px] text-ink-faint text-center py-12">暂无对话</p>}
             {sessions.map((session) => {
               const persona = allPersonas.find((p) => p.id === session.persona);
               const isActive = currentSessionId === session.id;
               return (
                 <div key={session.id}
-                  className={`session-item group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm cursor-pointer ${isActive ? "bg-accent-soft text-accent-text font-medium shadow-sm" : "text-ink-secondary hover:bg-card-hover hover:text-ink"}`}
+                  className={`session-item group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm cursor-pointer ${isActive ? "bg-accent-soft text-accent-text font-medium" : "text-ink-secondary hover:bg-card-hover hover:text-ink"}`}
                   onClick={() => setCurrentSessionId(session.id)}
                 >
                   <span className="text-base shrink-0">{persona?.emoji || "✨"}</span>
                   <span className="flex-1 truncate text-[13px]">{session.title}</span>
                   <button onClick={(e) => { e.stopPropagation(); deleteSessionById(session.id); }}
-                    className="opacity-0 group-hover:opacity-100 shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-ink-muted hover:text-red-500 hover:bg-red-500/10 transition-all">
+                    className="opacity-0 group-hover:opacity-100 shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:text-red-500 hover:bg-red-500/10 transition-all">
                     {TrashIcon}
                   </button>
                 </div>
@@ -526,19 +525,18 @@ export default function Home() {
             })}
           </div>
 
-          {/* Bottom */}
-          <div className="p-3 border-t border-line space-y-0.5">
+          <div className="p-4 border-t border-line space-y-0.5">
             <button onClick={() => setPersonaModalOpen(true)}
-              className="btn-press w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-all">
+              className="btn-press w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
               管理角色
             </button>
             <button onClick={() => { setMcpModalOpen(true); setMcpTab("market"); }}
-              className="btn-press w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-all">
+              className="btn-press w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               MCP 工具
               {mcpServers.filter(s => s.enabled).length > 0 && (
-                <span className="ml-auto text-[10px] rounded-full bg-green-500/15 text-green-600 px-1.5 py-0.5">{mcpServers.filter(s => s.enabled).length}</span>
+                <span className="ml-auto text-[11px] font-medium rounded-full bg-green-soft text-green-text px-2 py-0.5">{mcpServers.filter(s => s.enabled).length}</span>
               )}
             </button>
           </div>
@@ -547,41 +545,36 @@ export default function Home() {
 
       {/* ===== Main ===== */}
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Header */}
-        <header className="shrink-0 flex items-center gap-3 px-5 py-3 bg-panel border-b border-line z-10">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">
+        <header className="shrink-0 flex items-center gap-4 px-6 py-3.5 bg-panel border-b border-line z-10">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="btn-press rounded-xl p-2.5 text-ink-muted hover:text-ink hover:bg-card-hover transition-colors" aria-label="侧边栏">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={sidebarOpen ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} /></svg>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-medium truncate">{currentSession ? currentSession.title : "PTC Cortex"}</h1>
-            {currentPersona && <p className="text-xs text-ink-muted truncate">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
+            <h1 className="text-[15px] font-semibold truncate tracking-tight">{currentSession ? currentSession.title : "PTC Cortex"}</h1>
+            {currentPersona && <p className="text-[13px] text-ink-muted truncate mt-0.5">{currentPersona.emoji} {currentPersona.name} · {currentPersona.desc}</p>}
           </div>
-          {/* Back to blog */}
-          <a href="/" className="btn-press shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-colors" title="返回文章阅读">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+          <Link href="/" className="btn-press shrink-0 flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover transition-colors" title="返回文章">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             返回文章
-          </a>
-          {/* Theme toggle */}
-          <button onClick={toggleTheme} className="btn-press shrink-0 rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-all" title={theme === "light" ? "切换暗色" : "切换亮色"}>
+          </Link>
+          <button onClick={toggleTheme} className="btn-press shrink-0 rounded-xl p-2.5 text-ink-muted hover:text-ink hover:bg-card-hover transition-colors" title={theme === "light" ? "暗色模式" : "亮色模式"}>
             {theme === "light" ? MoonIcon : SunIcon}
           </button>
-          {/* Analyze */}
           <button onClick={() => { setAnalyzeOpen(true); setAnalysisResult(null); }}
-            className="btn-press shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-ink-muted hover:text-ink-secondary hover:bg-card-hover transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            className="btn-press shrink-0 flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
             文本分析
           </button>
-          {/* User Avatar */}
           {userInfo && (
-            <div className="shrink-0 flex items-center gap-2 pl-2 border-l border-line" title={userInfo.name}>
+            <div className="shrink-0 flex items-center gap-2.5 pl-4 border-l border-line" title={userInfo.name}>
               {userInfo.image ? (
                 <img src={userInfo.image} alt={userInfo.name} className="w-8 h-8 rounded-full object-cover border border-line" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center text-xs font-bold text-page">
+                <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center text-xs font-semibold text-panel">
                   {userInfo.name.charAt(0).toUpperCase()}
                 </div>
               )}
-              <span className="text-xs text-ink-secondary hidden sm:block max-w-[80px] truncate">{userInfo.name}</span>
+              <span className="text-[13px] text-ink-secondary hidden sm:block max-w-[88px] truncate">{userInfo.name}</span>
             </div>
           )}
         </header>
@@ -590,27 +583,27 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={handleMessagesScroll}>
           {/* Scroll to bottom button */}
           {userScrolledUp && loading && (
-            <button onClick={scrollToBottom} className="sticky top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium bg-card/90 backdrop-blur border border-line shadow-lg hover:bg-card-hover transition-all" style={{ marginBottom: "-32px" }}>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+            <button onClick={scrollToBottom} className="sticky top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-medium bg-panel border border-line hover:bg-card-hover transition-colors" style={{ marginBottom: "-40px", boxShadow: "var(--c-shadow-lg)" }}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
               回到最新
             </button>
           )}
-          <div className="mx-auto max-w-3xl px-4 py-6 space-y-5">
+          <div className="mx-auto max-w-3xl px-5 py-8 space-y-6">
             {!currentSessionId ? (
-              <div className="flex flex-col items-center justify-center py-32 select-none">
-                <div className="welcome-icon text-5xl mb-5">✨</div>
-                <h2 className="text-lg font-semibold tracking-tight mb-1.5">开始一段新对话</h2>
-                <p className="text-[13px] text-ink-muted mb-7">支持联网搜索、图片生成、文件解析等能力</p>
+              <div className="flex flex-col items-center justify-center py-36 select-none">
+                <div className="welcome-icon text-[56px] mb-6">✨</div>
+                <h2 className="text-xl font-semibold tracking-tight text-ink mb-2">开始一段新对话</h2>
+                <p className="text-[14px] text-ink-muted mb-8 max-w-sm text-center">支持联网搜索、图片生成、文件解析与 MCP 工具扩展</p>
                 <button onClick={() => setPersonaPickerOpen(true)}
-                  className="btn-press rounded-full bg-ink text-page px-5 py-2 text-[13px] font-medium hover:opacity-85 transition-opacity">
+                  className="btn-press rounded-xl bg-ink text-panel px-6 py-3 text-[14px] font-medium hover:opacity-90 transition-opacity">
                   选择角色开始
                 </button>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-32 select-none">
-                <div className="text-4xl mb-4">{currentPersona?.emoji || "✨"}</div>
-                <h2 className="text-base font-semibold tracking-tight mb-1">{currentPersona?.name}</h2>
-                <p className="text-[13px] text-ink-muted">{currentPersona?.desc}</p>
+              <div className="flex flex-col items-center justify-center py-36 select-none">
+                <div className="text-5xl mb-5">{currentPersona?.emoji || "✨"}</div>
+                <h2 className="text-lg font-semibold tracking-tight text-ink mb-1.5">{currentPersona?.name}</h2>
+                <p className="text-[14px] text-ink-muted">{currentPersona?.desc}</p>
               </div>
             ) : (
               messages.map((msg, index) => (
@@ -685,18 +678,17 @@ export default function Home() {
 
                       {/* ── Content ── */}
                       {msg.content && (
-                        <div className="markdown-body text-[14px] leading-[1.7]">
+                        <div className="rounded-2xl border border-line bg-card px-4 py-3.5 markdown-body text-[14px] leading-[1.7]" style={{ boxShadow: "var(--c-shadow)" }}>
                           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
                             img: ({ src, alt }) => (
-                              <img src={src} alt={alt || ''} className="rounded-lg max-w-full max-h-[400px] object-contain my-2" />
+                              <img src={src} alt={alt || ''} className="rounded-xl max-w-full max-h-[400px] object-contain my-2" />
                             )
                           }}>{msg.content}</ReactMarkdown>
                         </div>
                       )}
                     </div>
                   ) : (
-                    /* User message */
-                    <div className="max-w-[75%] rounded-2xl px-4 py-2.5" style={{ background: "var(--c-user-bubble)", color: "var(--c-page)" }}>
+                    <div className="max-w-[78%] rounded-2xl px-4 py-3 bg-ink text-panel">
                       <p className="whitespace-pre-wrap text-[14px] leading-[1.65]">{msg.content}</p>
                     </div>
                   )}
@@ -736,44 +728,40 @@ export default function Home() {
 
         {/* Input */}
         {currentSessionId && (
-          <div className="shrink-0 px-4 pb-4 pt-2">
+          <div className="shrink-0 px-5 pb-5 pt-3">
             <div className="mx-auto max-w-3xl">
-              <div className="rounded-2xl border border-line bg-card overflow-hidden focus-within:border-accent-text/40 transition-colors duration-200" style={{ boxShadow: "var(--c-shadow)" }}>
-                {/* Input row */}
-                <div className="px-4 pt-3 pb-2">
+              <div className="rounded-2xl border border-line bg-card overflow-hidden focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/10 transition-all duration-200" style={{ boxShadow: "var(--c-shadow)" }}>
+                <div className="px-4 pt-3.5 pb-2">
                   <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                    placeholder={`给 ${currentPersona?.name || "AI"} 发送消息`} className="w-full bg-transparent text-sm placeholder-ink-faint outline-none" disabled={loading} />
+                    placeholder={`给 ${currentPersona?.name || "AI"} 发送消息`} className="w-full bg-transparent text-[15px] placeholder-ink-faint outline-none disabled:opacity-50" disabled={loading} />
                 </div>
-                {/* Bottom toolbar */}
-                <div className="flex items-center justify-between px-3 pb-2.5">
-                  {/* Left: pill toggles */}
+                <div className="flex items-center justify-between px-3 pb-3">
                   <div className="flex items-center gap-2">
                     <button onClick={() => setReasoningMode(!reasoningMode)} disabled={loading}
-                      className={`btn-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all disabled:opacity-30 ${reasoningMode ? "border-violet-500/50 text-violet-500 bg-violet-500/10" : "border-line text-ink-muted hover:text-ink-secondary hover:border-ink-faint hover:bg-card-hover"}`}>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                      className={`btn-press flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium border transition-all disabled:opacity-30 ${reasoningMode ? "border-accent text-accent-text bg-accent-soft" : "border-line text-ink-muted hover:text-ink hover:bg-card-hover"}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                       深度思考
                     </button>
                     <button onClick={() => setWebSearchEnabled(!webSearchEnabled)} disabled={loading}
-                      className={`btn-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all disabled:opacity-30 ${webSearchEnabled ? "border-blue-500/50 text-blue-500 bg-blue-500/10" : "border-line text-ink-muted hover:text-ink-secondary hover:border-ink-faint hover:bg-card-hover"}`}>
+                      className={`btn-press flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium border transition-all disabled:opacity-30 ${webSearchEnabled ? "border-accent text-accent-text bg-accent-soft" : "border-line text-ink-muted hover:text-ink hover:bg-card-hover"}`}>
                       {GlobeIcon}
                       联网搜索
                     </button>
                   </div>
-                  {/* Right: attachment + send */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <input ref={fileInputRef} type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt" onChange={handleFileUpload} className="hidden" />
                     <button onClick={() => fileInputRef.current?.click()} disabled={loading}
-                      className="btn-press rounded-full p-2 text-ink-faint hover:text-ink-muted hover:bg-card-hover transition-all disabled:opacity-30" title="上传文件">
+                      className="btn-press rounded-xl p-2.5 text-ink-faint hover:text-ink hover:bg-card-hover transition-colors disabled:opacity-30" title="上传文件">
                       {ClipIcon}
                     </button>
                     <button onClick={sendMessage} disabled={loading || !input.trim()}
-                      className="btn-press shrink-0 rounded-full bg-ink text-page p-2 transition-opacity hover:opacity-80 disabled:opacity-20">
+                      className="btn-press shrink-0 rounded-xl bg-accent text-white p-2.5 transition-opacity hover:opacity-90 disabled:opacity-30">
                       {SendIcon}
                     </button>
                   </div>
                 </div>
               </div>
-              <p className="text-center text-[10px] text-ink-faint mt-2">内容由 AI 生成，请仔细甄别</p>
+              <p className="text-center text-[11px] text-ink-faint mt-2.5">内容由 AI 生成，请仔细甄别</p>
             </div>
           </div>
         )}
@@ -781,29 +769,29 @@ export default function Home() {
 
       {/* ===== Persona Picker ===== */}
       {personaPickerOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setPersonaPickerOpen(false)}>
-          <div className="modal-content w-full max-w-lg mx-4 rounded-2xl bg-modal border border-line shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-              <h2 className="text-base font-semibold">选择角色</h2>
-              <button onClick={() => setPersonaPickerOpen(false)} className="btn-press rounded-lg p-1 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">{CloseIcon}</button>
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-md" onClick={() => setPersonaPickerOpen(false)}>
+          <div className="modal-content w-full max-w-lg mx-4 rounded-2xl bg-modal border border-line" style={{ boxShadow: "var(--c-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-line">
+              <h2 className="text-[17px] font-semibold tracking-tight">选择角色</h2>
+              <button onClick={() => setPersonaPickerOpen(false)} className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">{CloseIcon}</button>
             </div>
-            <div className="p-4 grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
+            <div className="p-5 grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
               {allPersonas.map((p) => (
                 <button key={p.id} onClick={() => createNewSession(p.id)}
-                  className="btn-press flex items-center gap-3 rounded-xl bg-card hover:bg-card-hover border border-line hover:border-accent-border px-4 py-3 text-left transition-all group hover:shadow-sm">
-                  <span className="text-2xl group-hover:scale-110 transition-transform">{p.emoji}</span>
+                  className="btn-press flex items-center gap-3 rounded-xl bg-card hover:bg-card-hover border border-line hover:border-accent-border px-4 py-3.5 text-left transition-all group">
+                  <span className="text-2xl group-hover:scale-105 transition-transform">{p.emoji}</span>
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{p.name}</p>
-                    <p className="text-xs text-ink-muted truncate">{p.desc}</p>
+                    <p className="text-xs text-ink-muted truncate mt-0.5">{p.desc}</p>
                   </div>
                 </button>
               ))}
               <button onClick={() => { setPersonaPickerOpen(false); setPersonaModalOpen(true); }}
-                className="btn-press flex items-center gap-3 rounded-xl border border-dashed border-line hover:border-accent-border px-4 py-3 text-left transition-all group hover:shadow-sm">
-                <span className="w-10 h-10 rounded-lg bg-card flex items-center justify-center text-ink-faint group-hover:text-accent-text transition-colors">{PlusIcon}</span>
+                className="btn-press flex items-center gap-3 rounded-xl border border-dashed border-line hover:border-accent-border px-4 py-3.5 text-left transition-all group">
+                <span className="w-10 h-10 rounded-xl bg-card flex items-center justify-center text-ink-faint group-hover:text-accent-text transition-colors">{PlusIcon}</span>
                 <div>
                   <p className="text-sm font-medium text-ink-muted group-hover:text-ink-secondary">创建新角色</p>
-                  <p className="text-xs text-ink-faint">自定义人设和提示词</p>
+                  <p className="text-xs text-ink-faint mt-0.5">自定义人设和提示词</p>
                 </div>
               </button>
             </div>
@@ -813,11 +801,11 @@ export default function Home() {
 
       {/* ===== Persona Manager ===== */}
       {personaModalOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setPersonaModalOpen(false)}>
-          <div className="modal-content w-full max-w-xl mx-4 rounded-2xl bg-modal border border-line shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-              <h2 className="text-base font-semibold">管理角色</h2>
-              <button onClick={() => setPersonaModalOpen(false)} className="btn-press rounded-lg p-1 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">{CloseIcon}</button>
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-md" onClick={() => setPersonaModalOpen(false)}>
+          <div className="modal-content w-full max-w-xl mx-4 rounded-2xl bg-modal border border-line max-h-[90vh] overflow-y-auto" style={{ boxShadow: "var(--c-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-line">
+              <h2 className="text-[17px] font-semibold tracking-tight">管理角色</h2>
+              <button onClick={() => setPersonaModalOpen(false)} className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">{CloseIcon}</button>
             </div>
             <div className="p-6 space-y-4 border-b border-line">
               <h3 className="text-sm font-medium text-ink-secondary">创建新角色</h3>
@@ -825,24 +813,24 @@ export default function Home() {
                 <div>
                   <label className="text-xs text-ink-muted mb-1 block">Emoji</label>
                   <input value={newPersona.emoji} onChange={(e) => setNewPersona({ ...newPersona, emoji: e.target.value })}
-                    className="w-14 h-10 rounded-lg bg-input-bg border border-line text-center text-lg outline-none focus:border-violet-500/50" maxLength={4} />
+                    className="w-14 h-10 rounded-lg bg-input-bg border border-line text-center text-lg outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" maxLength={4} />
                 </div>
                 <div>
                   <label className="text-xs text-ink-muted mb-1 block">角色名称</label>
                   <input value={newPersona.name} onChange={(e) => setNewPersona({ ...newPersona, name: e.target.value })} placeholder="例：旅行顾问"
-                    className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                    className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                 </div>
               </div>
               <div>
                 <label className="text-xs text-ink-muted mb-1 block">简短描述</label>
                 <input value={newPersona.description} onChange={(e) => setNewPersona({ ...newPersona, description: e.target.value })} placeholder="一句话描述角色特点"
-                  className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                  className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
               </div>
               <div>
                 <label className="text-xs text-ink-muted mb-1 block">系统提示词 (System Prompt)</label>
                 <textarea value={newPersona.prompt} onChange={(e) => setNewPersona({ ...newPersona, prompt: e.target.value })}
                   placeholder={"定义角色的性格、说话风格、能力范围...\n例：你是一个专业的旅行顾问，擅长规划行程。"} rows={4}
-                  className="w-full rounded-lg bg-input-bg border border-line px-3 py-2.5 text-sm placeholder-ink-faint outline-none resize-none focus:border-violet-500/50" />
+                  className="w-full rounded-lg bg-input-bg border border-line px-3 py-2.5 text-sm placeholder-ink-faint outline-none resize-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
               </div>
               <div>
                 <label className="text-xs text-ink-muted mb-1 block">温度 (Temperature: {newPersona.temperature})</label>
@@ -850,7 +838,7 @@ export default function Home() {
                 <div className="flex justify-between text-[10px] text-ink-faint mt-1"><span>精确</span><span>创意</span></div>
               </div>
               <button onClick={handleCreatePersona} disabled={!newPersona.name.trim() || !newPersona.prompt.trim()}
-                className="btn-press w-full rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:shadow-lg hover:shadow-violet-500/20 transition-all">
+                className="btn-press w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:opacity-90 transition-all">
                 创建角色
               </button>
             </div>
@@ -877,17 +865,17 @@ export default function Home() {
 
       {/* ===== Analysis Modal ===== */}
       {analyzeOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setAnalyzeOpen(false)}>
-          <div className="modal-content w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-modal border border-line shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-line px-6 py-4">
-              <div><h2 className="text-base font-semibold">文本分析器</h2><p className="text-xs text-ink-muted mt-0.5">Output Parser — 结构化 JSON 输出</p></div>
-              <button onClick={() => setAnalyzeOpen(false)} className="btn-press rounded-lg p-1 text-ink-muted hover:text-ink hover:bg-card-hover transition-all">{CloseIcon}</button>
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-md" onClick={() => setAnalyzeOpen(false)}>
+          <div className="modal-content w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-modal border border-line mx-4" style={{ boxShadow: "var(--c-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line px-6 py-5">
+              <div><h2 className="text-[17px] font-semibold tracking-tight">文本分析器</h2><p className="text-[13px] text-ink-muted mt-0.5">结构化 JSON 输出</p></div>
+              <button onClick={() => setAnalyzeOpen(false)} className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">{CloseIcon}</button>
             </div>
             <div className="px-6 py-4">
               <textarea value={analyzeText} onChange={(e) => setAnalyzeText(e.target.value)} placeholder="粘贴一段文本，AI 会返回结构化的分析结果..."
-                className="w-full h-32 rounded-xl bg-input-bg border border-line px-4 py-3 text-sm placeholder-ink-faint outline-none resize-none focus:border-violet-500/50" />
+                className="w-full h-32 rounded-xl bg-input-bg border border-line px-4 py-3 text-sm placeholder-ink-faint outline-none resize-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
               <button onClick={handleAnalyze} disabled={analyzeLoading || !analyzeText.trim()}
-                className="btn-press mt-3 w-full rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-6 py-3 text-sm font-medium text-white disabled:opacity-30 transition-all hover:shadow-lg hover:shadow-violet-500/20">
+                className="btn-press mt-3 w-full rounded-xl bg-accent px-6 py-3 text-sm font-medium text-white disabled:opacity-30 transition-all hover:opacity-90">
                 {analyzeLoading ? "分析中..." : "开始分析"}
               </button>
             </div>
@@ -911,7 +899,7 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <span className="text-2xl font-bold">{Math.round(analysisResult.sentimentScore * 100)}%</span>
                       <div className="flex-1 h-2 bg-card-hover rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-linear-to-r from-violet-500 to-blue-500 transition-all" style={{ width: `${analysisResult.sentimentScore * 100}%` }} />
+                        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${analysisResult.sentimentScore * 100}%` }} />
                       </div>
                     </div>
                   </div>
@@ -949,14 +937,13 @@ export default function Home() {
 
       {/* ===== MCP Management Modal (Redesigned with Tabs) ===== */}
       {mcpModalOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setMcpModalOpen(false)}>
-          <div className="modal-content w-full max-w-2xl mx-4 rounded-2xl bg-modal border border-line shadow-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="shrink-0 px-6 py-4 border-b border-line">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-md" onClick={() => setMcpModalOpen(false)}>
+          <div className="modal-content w-full max-w-2xl mx-4 rounded-2xl bg-modal border border-line max-h-[90vh] flex flex-col" style={{ boxShadow: "var(--c-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 px-6 py-5 border-b border-line">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-semibold">MCP 工具中心</h2>
-                  <p className="text-xs text-ink-muted mt-0.5">安装和管理 AI 外部工具能力</p>
+                  <h2 className="text-[17px] font-semibold tracking-tight">MCP 工具中心</h2>
+                  <p className="text-[13px] text-ink-muted mt-0.5">安装和管理 AI 外部工具能力</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1050,7 +1037,7 @@ export default function Home() {
                             ) : (
                               <button
                                 onClick={() => handleInstallPreset(preset)}
-                                className="btn-press shrink-0 text-xs bg-linear-to-r from-violet-600 to-blue-600 text-white px-3 py-1.5 rounded-lg hover:shadow-md hover:shadow-violet-500/20 transition-all"
+                                className="btn-press shrink-0 text-xs bg-accent text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all"
                               >
                                 一键安装
                               </button>
@@ -1110,12 +1097,12 @@ export default function Home() {
                     <div>
                       <label className="text-xs text-ink-muted mb-1 block">服务名称</label>
                       <input value={newMcp.name} onChange={(e) => setNewMcp({ ...newMcp, name: e.target.value })} placeholder="例：filesystem"
-                        className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                        className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                     </div>
                     <div>
                       <label className="text-xs text-ink-muted mb-1 block">传输类型</label>
                       <select value={newMcp.transport} onChange={(e) => setNewMcp({ ...newMcp, transport: e.target.value as "stdio" | "http" })}
-                        className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm outline-none focus:border-violet-500/50">
+                        className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent/20">
                         <option value="stdio">Stdio (本地命令)</option>
                         <option value="http">HTTP (远程服务)</option>
                       </select>
@@ -1127,12 +1114,12 @@ export default function Home() {
                       <div>
                         <label className="text-xs text-ink-muted mb-1 block">命令 (Command)</label>
                         <input value={newMcp.command} onChange={(e) => setNewMcp({ ...newMcp, command: e.target.value })} placeholder="例：npx"
-                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                       </div>
                       <div>
                         <label className="text-xs text-ink-muted mb-1 block">参数 (Args，空格分隔)</label>
                         <input value={newMcp.args} onChange={(e) => setNewMcp({ ...newMcp, args: e.target.value })} placeholder="例：-y @modelcontextprotocol/server-filesystem /tmp"
-                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                       </div>
                     </>
                   ) : (
@@ -1140,19 +1127,19 @@ export default function Home() {
                       <div>
                         <label className="text-xs text-ink-muted mb-1 block">URL</label>
                         <input value={newMcp.url} onChange={(e) => setNewMcp({ ...newMcp, url: e.target.value })} placeholder="例：https://example.com/mcp"
-                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                       </div>
                       <div>
                         <label className="text-xs text-ink-muted mb-1 block">Headers (可选，JSON 格式)</label>
                         <input value={newMcp.headers} onChange={(e) => setNewMcp({ ...newMcp, headers: e.target.value })} placeholder='例：{"Authorization":"Bearer xxx"}'
-                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50" />
+                          className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20" />
                       </div>
                     </>
                   )}
 
                   <button onClick={handleAddMcpServer}
                     disabled={!newMcp.name.trim() || (newMcp.transport === "stdio" ? !newMcp.command.trim() : !newMcp.url.trim())}
-                    className="btn-press w-full rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:shadow-lg hover:shadow-violet-500/20 transition-all">
+                    className="btn-press w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:opacity-90 transition-all">
                     添加 Server
                   </button>
                 </div>
@@ -1164,10 +1151,10 @@ export default function Home() {
 
       {/* ===== Preset Config Dialog ===== */}
       {presetInstalling && (
-        <div className="modal-overlay fixed inset-0 z-60 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setPresetInstalling(null)}>
-          <div className="modal-content w-full max-w-md mx-4 rounded-2xl bg-modal border border-line shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-line">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
+        <div className="modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-overlay backdrop-blur-md" onClick={() => setPresetInstalling(null)}>
+          <div className="modal-content w-full max-w-md mx-4 rounded-2xl bg-modal border border-line" style={{ boxShadow: "var(--c-shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-line">
+              <h3 className="text-[15px] font-semibold tracking-tight flex items-center gap-2">
                 <span className="text-xl">{presetInstalling.icon}</span>
                 安装 {presetInstalling.name}
               </h3>
@@ -1185,7 +1172,7 @@ export default function Home() {
                     value={presetEnvValues[key] || ""}
                     onChange={(e) => setPresetEnvValues(prev => ({ ...prev, [key]: e.target.value }))}
                     placeholder={presetInstalling.envPlaceholders?.[key] || ""}
-                    className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-violet-500/50 font-mono"
+                    className="w-full h-10 rounded-lg bg-input-bg border border-line px-3 text-sm placeholder-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 font-mono"
                   />
                 </div>
               ))}
@@ -1197,7 +1184,7 @@ export default function Home() {
                 <button
                   onClick={() => doInstallPreset(presetInstalling, presetEnvValues)}
                   disabled={presetInstalling.envKeys?.some(k => !presetEnvValues[k]?.trim())}
-                  className="btn-press flex-1 rounded-xl bg-linear-to-r from-violet-600 to-blue-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:shadow-lg hover:shadow-violet-500/20 transition-all">
+                  className="btn-press flex-1 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 hover:opacity-90 transition-all">
                   确认安装
                 </button>
               </div>
