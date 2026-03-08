@@ -17,7 +17,6 @@
     "@langchain/openai": "^1.2.7",
     "@langchain/textsplitters": "^1.0.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "ali-oss": "^6.23.0",
     "langchain": "^1.2.21",
     "next": "16.1.6",
     "pdf-parse": "^2.4.5",
