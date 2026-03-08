@@ -954,8 +954,6 @@ export default function Home() {
                       {msg.toolCalls && msg.toolCalls.length > 0 && msg.toolCalls.map((tc, tcIdx) => {
                         const key = `${index}-${tcIdx}`;
                         const expanded = isToolExpanded(key, tc.isComplete);
-                        const hasImage = tc.result?.includes("![");
-                        const imageMatch = hasImage ? tc.result?.match(/!\[.*?\]\((.*?)\)/) : null;
                         return (
                           <div key={tcIdx} className="mb-1">
                             <div className="ds-toggle" onClick={() => tc.isComplete && toggleTool(key)}>
@@ -972,12 +970,9 @@ export default function Home() {
                                 <span className={`ds-chevron ${expanded ? "rotate-180" : ""}`}>{ChevronIcon}</span>
                               )}
                             </div>
-                            {tc.isComplete && imageMatch && imageMatch[1] && (
-                              <img src={imageMatch[1]} alt="" className="rounded-xl max-w-full max-h-[480px] object-contain mt-2" />
-                            )}
                             {expanded && tc.result && (
                               <div className="ds-thinking-content">
-                                {hasImage ? tc.result.replace(/!\[.*?\]\(.*?\)/g, "").trim() : tc.result}
+                                {tc.result.replace(/!\[.*?\]\(.*?\)\n?/g, "").trim() || tc.result}
                               </div>
                             )}
                           </div>
@@ -992,7 +987,14 @@ export default function Home() {
                             img: ({ src, alt }) => (
                               <img src={src} alt={alt || ''} className="rounded-xl max-w-full max-h-[400px] object-contain my-2" />
                             )
-                          }}>{msg.content}</ReactMarkdown>
+                          }}>{(() => {
+                            const seen = new Set<string>();
+                            return msg.content.replace(/!\[.*?\]\((.*?)\)\n?/g, (match: string, url: string) => {
+                              if (seen.has(url)) return "";
+                              seen.add(url);
+                              return match;
+                            });
+                          })()}</ReactMarkdown>
                         </div>
                       )}
                     </div>
