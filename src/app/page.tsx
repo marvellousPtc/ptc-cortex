@@ -954,6 +954,8 @@ export default function Home() {
                       {msg.toolCalls && msg.toolCalls.length > 0 && msg.toolCalls.map((tc, tcIdx) => {
                         const key = `${index}-${tcIdx}`;
                         const expanded = isToolExpanded(key, tc.isComplete);
+                        const hasImage = tc.result?.includes("![");
+                        const imageMatch = hasImage ? tc.result?.match(/!\[.*?\]\((.*?)\)/) : null;
                         return (
                           <div key={tcIdx} className="mb-1">
                             <div className="ds-toggle" onClick={() => tc.isComplete && toggleTool(key)}>
@@ -971,9 +973,16 @@ export default function Home() {
                               )}
                             </div>
                             {expanded && tc.result && (
-                              <div className="ds-thinking-content">
-                                {tc.result}
+                              <div className="ds-thinking-content markdown-body">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+                                  img: ({ src, alt }) => (
+                                    <img src={src} alt={alt || ''} className="rounded-xl max-w-full max-h-[400px] object-contain my-2" />
+                                  )
+                                }}>{tc.result}</ReactMarkdown>
                               </div>
+                            )}
+                            {tc.isComplete && imageMatch && imageMatch[1] && (
+                              <img src={imageMatch[1]} alt="" className="rounded-xl max-w-full max-h-[480px] object-contain mt-2" />
                             )}
                           </div>
                         );
