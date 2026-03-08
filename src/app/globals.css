@@ -312,6 +312,26 @@ input:focus, textarea:focus, select:focus {
   animation: slideDown 0.2s ease-out;
 }
 
+/* ====== Image Skeleton ====== */
+.skeleton-image {
+  width: 280px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: linear-gradient(
+    110deg,
+    var(--c-card) 30%,
+    var(--c-card-hover, rgba(0,0,0,0.04)) 50%,
+    var(--c-card) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }

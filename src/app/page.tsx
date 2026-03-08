@@ -980,21 +980,26 @@ export default function Home() {
                       })}
 
                       {/* Content */}
-                      {msg.content && (
+                      {(msg.content || msg.toolCalls?.some(tc => !tc.isComplete && tc.name.toLowerCase().match(/image|generate|jimeng/))) && (
                         <div className="rounded-2xl bg-card px-4 py-3.5 markdown-body text-[14px] leading-[1.75] mt-1"
                           style={{ boxShadow: "var(--c-shadow)" }}>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
-                            img: ({ src, alt }) => (
-                              <img src={src} alt={alt || ''} className="rounded-xl max-w-full max-h-[400px] object-contain my-2" />
-                            )
-                          }}>{(() => {
-                            const seen = new Set<string>();
-                            return msg.content.replace(/!\[.*?\]\((.*?)\)\n?/g, (match: string, url: string) => {
-                              if (seen.has(url)) return "";
-                              seen.add(url);
-                              return match;
-                            });
-                          })()}</ReactMarkdown>
+                          {msg.content && (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+                              img: ({ src, alt }) => (
+                                <img src={src} alt={alt || ''} className="rounded-xl max-w-full max-h-[400px] object-contain my-2" />
+                              )
+                            }}>{(() => {
+                              const seen = new Set<string>();
+                              return msg.content.replace(/!\[.*?\]\((.*?)\)\n?/g, (match: string, url: string) => {
+                                if (seen.has(url)) return "";
+                                seen.add(url);
+                                return match;
+                              });
+                            })()}</ReactMarkdown>
+                          )}
+                          {msg.toolCalls?.some(tc => !tc.isComplete && tc.name.toLowerCase().match(/image|generate|jimeng/)) && (
+                            <div className="skeleton-image mt-3" />
+                          )}
                         </div>
                       )}
                     </div>
