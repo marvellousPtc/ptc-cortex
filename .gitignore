@@ -47,4 +47,4 @@ next-env.d.ts
 /public/uploads/
 
 # generated images
-/public/generated-images/
+/data/images/
