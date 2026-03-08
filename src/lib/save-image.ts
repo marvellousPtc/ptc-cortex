@@ -1,28 +1,30 @@
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
+// @ts-expect-error ali-oss has no type declarations
+import OSS from "ali-oss";
 
-const IMAGE_DIR = path.join(process.cwd(), "data", "images");
+let ossClient: OSS | null = null;
 
-function ensureDir() {
-  if (!fs.existsSync(IMAGE_DIR)) {
-    fs.mkdirSync(IMAGE_DIR, { recursive: true });
-  }
+function getOSSClient(): OSS {
+  if (ossClient) return ossClient;
+  ossClient = new OSS({
+    region: process.env.DEFAULT_OSS_REGION || "oss-cn-beijing",
+    bucket: process.env.DEFAULT_OSS_BUCKET || "",
+    accessKeyId: process.env.DEFAULT_OSS_ACCESS_KEY_ID || "",
+    accessKeySecret: process.env.DEFAULT_OSS_ACCESS_KEY_SECRET || "",
+  });
+  return ossClient;
 }
 
 /**
- * Download a remote image and save it to data/images/.
- * Returns an API route URL (e.g. /api/images?f=abc123.png)
- * that serves the image reliably in both dev and production.
- * Falls back to original URL if download fails.
+ * Download a remote image and upload it to Alibaba Cloud OSS.
+ * Returns the public OSS URL for permanent access.
+ * Falls back to original URL if upload fails.
  */
 export async function saveImageLocally(remoteUrl: string): Promise<string> {
   try {
-    ensureDir();
-
     const res = await fetch(remoteUrl);
     if (!res.ok) {
-      console.warn("Failed to download image, using remote URL:", res.status);
+      console.warn("Failed to download image:", res.status);
       return remoteUrl;
     }
 
@@ -35,15 +37,20 @@ export async function saveImageLocally(remoteUrl: string): Promise<string> {
 
     const hash = crypto.randomUUID().slice(0, 12);
     const filename = `${Date.now()}-${hash}${ext}`;
-    const filePath = path.join(IMAGE_DIR, filename);
+    const ossDir = process.env.DEFAULT_OSS_DIR || "public";
+    const ossPath = `${ossDir}/generated-images/${filename}`;
 
     const buffer = Buffer.from(await res.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
+    const client = getOSSClient();
+    const result = await client.put(ossPath, buffer, {
+      headers: { "Content-Type": contentType },
+    });
 
-    console.log(`🖼️ Image saved: ${filePath} (${(buffer.length / 1024).toFixed(1)}KB)`);
-    return `/api/images?f=${filename}`;
+    const ossUrl = result.url.replace(/^http:/, "https:");
+    console.log(`🖼️ Image uploaded to OSS: ${ossUrl} (${(buffer.length / 1024).toFixed(1)}KB)`);
+    return ossUrl;
   } catch (err) {
-    console.warn("Failed to save image locally, using remote URL:", err);
+    console.warn("Failed to upload image to OSS:", err);
     return remoteUrl;
   }
 }
