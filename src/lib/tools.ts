@@ -144,13 +144,14 @@ export const webSearchTool = tool(
 // ===== 工具 6：图片生成 =====
 // 接入硅基流动 API，让 AI 能生成图片
 import { generateImage } from "./image-gen";
+import { saveImageLocally } from "./save-image";
 
 export const imageGenerationTool = tool(
   async ({ prompt }) => {
     const result = await generateImage(prompt);
-    // 如果是 URL，用 Markdown 图片格式返回，前端会自动渲染
     if (result.startsWith("http")) {
-      return `![${prompt}](${result})`;
+      const localUrl = await saveImageLocally(result);
+      return `![${prompt}](${localUrl})`;
     }
     return result;
   },
@@ -175,7 +176,8 @@ export const jimengImageTool = tool(
   async ({ prompt, size }) => {
     const result = await generateJimengImage(prompt, size);
     if (result.startsWith("http")) {
-      return `![${prompt}](${result})`;
+      const localUrl = await saveImageLocally(result);
+      return `![${prompt}](${localUrl})`;
     }
     return result;
   },
