@@ -463,6 +463,35 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 1px 0 0 rgba(255, 255, 255, 0.02);
 }
 
+/* ====== Header glass ====== */
+header {
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  backdrop-filter: blur(12px) saturate(180%);
+}
+
+/* ====== Color Picker ====== */
+.color-picker-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  right: 8px;
+  padding: 14px;
+  border-radius: var(--c-radius);
+  background: var(--c-panel);
+  border: 1px solid var(--c-line);
+  box-shadow: var(--c-shadow-lg);
+  z-index: 50;
+  animation: pickerIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] .color-picker-popover {
+  background: var(--c-card);
+  border-color: var(--c-line);
+}
+@keyframes pickerIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* ====== Persona card ====== */
 .persona-card {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;

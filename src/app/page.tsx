@@ -1,10 +1,290 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { useTheme } from "next-themes";
+
+/* ====== Color Utilities ====== */
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  let r: number, g: number, b: number;
+  if (s === 0) { r = g = b = l; } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = (v: number) => Math.round(v * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function lighten(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  return hslToHex(h, s, Math.min(1, l + amount));
+}
+
+function darken(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  return hslToHex(h, s, Math.max(0, l - amount));
+}
+
+function deriveAccentVars(hex: string, isDark: boolean): Record<string, string> {
+  const [r, g, b] = hexToRgb(hex);
+  if (isDark) {
+    const lightHex = lighten(hex, 0.2);
+    const [lr, lg, lb] = hexToRgb(lightHex);
+    const brighterHex = lighten(hex, 0.35);
+    const secondHex = lighten(hex, 0.1);
+    return {
+      "--c-accent": lightHex,
+      "--c-accent-soft": `rgba(${lr}, ${lg}, ${lb}, 0.08)`,
+      "--c-accent-border": `rgba(${lr}, ${lg}, ${lb}, 0.18)`,
+      "--c-accent-text": brighterHex,
+      "--c-green-soft": `rgba(${lr}, ${lg}, ${lb}, 0.08)`,
+      "--c-green-text": lightHex,
+      "--c-user-bubble": `linear-gradient(135deg, ${hex}, ${lightHex})`,
+      "--c-ai-avatar-from": `rgba(${lr}, ${lg}, ${lb}, 0.14)`,
+      "--c-ai-avatar-to": `rgba(${lr}, ${lg}, ${lb}, 0.05)`,
+      "--c-inline-code-bg": `rgba(${lr}, ${lg}, ${lb}, 0.1)`,
+      "--c-inline-code-text": brighterHex,
+      "--c-blockquote-border": `rgba(${lr}, ${lg}, ${lb}, 0.25)`,
+      "--c-link": brighterHex,
+      "--c-btn-gradient": `linear-gradient(135deg, ${darken(hex, 0.05)}, ${secondHex})`,
+      "--c-btn-shadow": `rgba(${lr}, ${lg}, ${lb}, 0.25)`,
+      "--c-logo-gradient": `linear-gradient(135deg, ${lightHex}, ${brighterHex})`,
+    };
+  }
+  const darkHex = darken(hex, 0.08);
+  const secondHex = lighten(hex, 0.15);
+  return {
+    "--c-accent": hex,
+    "--c-accent-soft": `rgba(${r}, ${g}, ${b}, 0.06)`,
+    "--c-accent-border": `rgba(${r}, ${g}, ${b}, 0.15)`,
+    "--c-accent-text": darkHex,
+    "--c-green-soft": `rgba(${r}, ${g}, ${b}, 0.06)`,
+    "--c-green-text": hex,
+    "--c-user-bubble": `linear-gradient(135deg, ${darkHex}, ${secondHex})`,
+    "--c-ai-avatar-from": `rgba(${r}, ${g}, ${b}, 0.12)`,
+    "--c-ai-avatar-to": `rgba(${r}, ${g}, ${b}, 0.04)`,
+    "--c-inline-code-bg": `rgba(${r}, ${g}, ${b}, 0.06)`,
+    "--c-inline-code-text": darkHex,
+    "--c-blockquote-border": `rgba(${r}, ${g}, ${b}, 0.25)`,
+    "--c-link": darkHex,
+    "--c-btn-gradient": `linear-gradient(135deg, ${darkHex}, ${secondHex})`,
+    "--c-btn-shadow": `rgba(${r}, ${g}, ${b}, 0.25)`,
+    "--c-logo-gradient": `linear-gradient(135deg, ${hex}, ${secondHex})`,
+  };
+}
+
+/* ====== HSV Utilities ====== */
+function hexToHsv(hex: string): [number, number, number] {
+  const [r, g, b] = hexToRgb(hex);
+  const r1 = r / 255, g1 = g / 255, b1 = b / 255;
+  const max = Math.max(r1, g1, b1), min = Math.min(r1, g1, b1), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r1) h = ((g1 - b1) / d + (g1 < b1 ? 6 : 0)) / 6;
+    else if (max === g1) h = ((b1 - r1) / d + 2) / 6;
+    else h = ((r1 - g1) / d + 4) / 6;
+  }
+  return [h * 360, max === 0 ? 0 : d / max, max];
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  h = ((h % 360) + 360) % 360;
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+const PRESET_COLORS = [
+  "#475569", "#64748b", "#6b7280", "#71717a",
+  "#ef4444", "#f97316", "#f59e0b", "#eab308",
+  "#84cc16", "#22c55e", "#14b8a6", "#06b6d4",
+  "#0ea5e9", "#3b82f6", "#6366f1", "#8b5cf6",
+  "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
+];
+
+function ColorPicker({ value, onChange, onClose }: { value: string; onChange: (hex: string) => void; onClose: () => void }) {
+  const [hsv, setHsv] = useState<[number, number, number]>(() => hexToHsv(value));
+  const [hexInput, setHexInput] = useState(value);
+  const svCanvasRef = useRef<HTMLCanvasElement>(null);
+  const hueBarRef = useRef<HTMLCanvasElement>(null);
+  const draggingSV = useRef(false);
+  const draggingHue = useRef(false);
+
+  const currentHex = hsvToHex(hsv[0], hsv[1], hsv[2]);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => { setHexInput(currentHex); onChangeRef.current(currentHex); }, [currentHex]);
+
+  useEffect(() => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const w = canvas.width, h = canvas.height;
+    const hueColor = hsvToHex(hsv[0], 1, 1);
+    const whiteGrad = ctx.createLinearGradient(0, 0, w, 0);
+    whiteGrad.addColorStop(0, "#ffffff");
+    whiteGrad.addColorStop(1, hueColor);
+    ctx.fillStyle = whiteGrad;
+    ctx.fillRect(0, 0, w, h);
+    const blackGrad = ctx.createLinearGradient(0, 0, 0, h);
+    blackGrad.addColorStop(0, "rgba(0,0,0,0)");
+    blackGrad.addColorStop(1, "#000000");
+    ctx.fillStyle = blackGrad;
+    ctx.fillRect(0, 0, w, h);
+  }, [hsv[0]]);
+
+  useEffect(() => {
+    const canvas = hueBarRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    for (let i = 0; i <= 6; i++) {
+      grad.addColorStop(i / 6, hsvToHex(i * 60, 1, 1));
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }, []);
+
+  const handleSV = (e: React.MouseEvent | MouseEvent) => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+    setHsv([hsv[0], s, v]);
+  };
+
+  const handleHue = (e: React.MouseEvent | MouseEvent) => {
+    const bar = hueBarRef.current;
+    if (!bar) return;
+    const rect = bar.getBoundingClientRect();
+    const h = Math.max(0, Math.min(360, ((e.clientX - rect.left) / rect.width) * 360));
+    setHsv([h, hsv[1], hsv[2]]);
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (draggingSV.current) handleSV(e);
+      if (draggingHue.current) handleHue(e);
+    };
+    const onUp = () => { draggingSV.current = false; draggingHue.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  });
+
+  const handleHexSubmit = () => {
+    const cleaned = hexInput.startsWith("#") ? hexInput : `#${hexInput}`;
+    if (/^#[0-9a-fA-F]{6}$/.test(cleaned)) {
+      setHsv(hexToHsv(cleaned));
+    } else {
+      setHexInput(currentHex);
+    }
+  };
+
+  return (
+    <div className="color-picker-popover" onClick={(e) => e.stopPropagation()}>
+      {/* SV Area */}
+      <div className="relative rounded-xl overflow-hidden" style={{ cursor: "crosshair" }}>
+        <canvas ref={svCanvasRef} width={240} height={160}
+          className="w-full h-[160px] rounded-xl"
+          onMouseDown={(e) => { draggingSV.current = true; handleSV(e); }} />
+        <div className="pointer-events-none absolute w-3.5 h-3.5 rounded-full border-2 border-white -translate-x-1/2 -translate-y-1/2"
+          style={{
+            left: `${hsv[1] * 100}%`, top: `${(1 - hsv[2]) * 100}%`,
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2)",
+          }} />
+      </div>
+
+      {/* Hue Bar */}
+      <div className="relative mt-3 rounded-full overflow-hidden" style={{ cursor: "pointer" }}>
+        <canvas ref={hueBarRef} width={240} height={14}
+          className="w-full h-[14px] rounded-full"
+          onMouseDown={(e) => { draggingHue.current = true; handleHue(e); }} />
+        <div className="pointer-events-none absolute top-1/2 w-4 h-4 rounded-full border-2 border-white -translate-x-1/2 -translate-y-1/2"
+          style={{
+            left: `${(hsv[0] / 360) * 100}%`,
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.15)",
+            background: hsvToHex(hsv[0], 1, 1),
+          }} />
+      </div>
+
+      {/* Hex Input */}
+      <div className="flex items-center gap-2 mt-3">
+        <div className="w-7 h-7 rounded-lg border border-line shrink-0" style={{ background: currentHex }} />
+        <div className="flex-1 flex items-center rounded-lg border border-line bg-input-bg px-2.5 h-7">
+          <span className="text-[11px] text-ink-faint mr-0.5">#</span>
+          <input
+            className="flex-1 bg-transparent text-[12px] font-mono text-ink outline-none w-0"
+            value={hexInput.replace("#", "")}
+            onChange={(e) => setHexInput(`#${e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6)}`)}
+            onBlur={handleHexSubmit}
+            onKeyDown={(e) => e.key === "Enter" && handleHexSubmit()}
+            maxLength={6}
+          />
+        </div>
+      </div>
+
+      {/* Preset Colors */}
+      <div className="grid grid-cols-10 gap-1.5 mt-3">
+        {PRESET_COLORS.map((c) => (
+          <button key={c} className="w-full aspect-square rounded-md border border-transparent hover:border-ink-faint transition-colors hover:scale-110 active:scale-95"
+            style={{ background: c, boxShadow: currentHex === c ? `0 0 0 2px var(--c-panel), 0 0 0 3.5px ${c}` : undefined }}
+            onClick={() => setHsv(hexToHsv(c))} />
+        ))}
+      </div>
+
+      {/* Close Button */}
+      <button onClick={onClose}
+        className="w-full mt-3 h-7 rounded-lg text-[12px] font-medium text-ink-muted hover:text-ink hover:bg-card-hover transition-colors">
+        完成
+      </button>
+    </div>
+  );
+}
 
 /* ====== Types ====== */
 interface ThinkingBlock { content: string; isComplete: boolean; }
@@ -160,231 +440,13 @@ const BUILTIN_PERSONAS = [
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-interface ThemeColor {
-  id: string;
-  name: string;
-  preview: string; // swatch color
-  light: Record<string, string>;
-  dark: Record<string, string>;
-}
-
-const THEME_COLORS: ThemeColor[] = [
-  {
-    id: "teal", name: "翡翠青", preview: "#0d9488",
-    light: {
-      "--c-accent": "#0d9488",
-      "--c-accent-soft": "rgba(13, 148, 136, 0.06)",
-      "--c-accent-border": "rgba(13, 148, 136, 0.15)",
-      "--c-accent-text": "#0f766e",
-      "--c-user-bubble": "linear-gradient(135deg, #0f766e, #059669)",
-      "--c-ai-avatar-from": "rgba(13, 148, 136, 0.12)",
-      "--c-ai-avatar-to": "rgba(13, 148, 136, 0.04)",
-      "--c-inline-code-bg": "rgba(13, 148, 136, 0.06)",
-      "--c-inline-code-text": "#0f766e",
-      "--c-blockquote-border": "rgba(13, 148, 136, 0.25)",
-      "--c-link": "#0f766e",
-      "--c-btn-gradient": "linear-gradient(135deg, #0f766e, #059669)",
-      "--c-btn-shadow": "rgba(13, 148, 136, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #0d9488, #059669)",
-    },
-    dark: {
-      "--c-accent": "#2dd4bf",
-      "--c-accent-soft": "rgba(45, 212, 191, 0.08)",
-      "--c-accent-border": "rgba(45, 212, 191, 0.18)",
-      "--c-accent-text": "#5eead4",
-      "--c-user-bubble": "linear-gradient(135deg, #14b8a6, #34d399)",
-      "--c-ai-avatar-from": "rgba(45, 212, 191, 0.14)",
-      "--c-ai-avatar-to": "rgba(45, 212, 191, 0.05)",
-      "--c-inline-code-bg": "rgba(45, 212, 191, 0.1)",
-      "--c-inline-code-text": "#5eead4",
-      "--c-blockquote-border": "rgba(45, 212, 191, 0.25)",
-      "--c-link": "#5eead4",
-      "--c-btn-gradient": "linear-gradient(135deg, #0f766e, #059669)",
-      "--c-btn-shadow": "rgba(45, 212, 191, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #2dd4bf, #34d399)",
-    },
-  },
-  {
-    id: "violet", name: "梦幻紫", preview: "#7c3aed",
-    light: {
-      "--c-accent": "#7c3aed",
-      "--c-accent-soft": "rgba(124, 58, 237, 0.06)",
-      "--c-accent-border": "rgba(124, 58, 237, 0.15)",
-      "--c-accent-text": "#6d28d9",
-      "--c-user-bubble": "linear-gradient(135deg, #6d28d9, #a855f7)",
-      "--c-ai-avatar-from": "rgba(124, 58, 237, 0.12)",
-      "--c-ai-avatar-to": "rgba(124, 58, 237, 0.04)",
-      "--c-inline-code-bg": "rgba(124, 58, 237, 0.06)",
-      "--c-inline-code-text": "#6d28d9",
-      "--c-blockquote-border": "rgba(124, 58, 237, 0.25)",
-      "--c-link": "#6d28d9",
-      "--c-btn-gradient": "linear-gradient(135deg, #6d28d9, #a855f7)",
-      "--c-btn-shadow": "rgba(124, 58, 237, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #7c3aed, #a855f7)",
-    },
-    dark: {
-      "--c-accent": "#a78bfa",
-      "--c-accent-soft": "rgba(167, 139, 250, 0.08)",
-      "--c-accent-border": "rgba(167, 139, 250, 0.18)",
-      "--c-accent-text": "#c4b5fd",
-      "--c-user-bubble": "linear-gradient(135deg, #8b5cf6, #c084fc)",
-      "--c-ai-avatar-from": "rgba(167, 139, 250, 0.14)",
-      "--c-ai-avatar-to": "rgba(167, 139, 250, 0.05)",
-      "--c-inline-code-bg": "rgba(167, 139, 250, 0.1)",
-      "--c-inline-code-text": "#c4b5fd",
-      "--c-blockquote-border": "rgba(167, 139, 250, 0.25)",
-      "--c-link": "#c4b5fd",
-      "--c-btn-gradient": "linear-gradient(135deg, #7c3aed, #a855f7)",
-      "--c-btn-shadow": "rgba(167, 139, 250, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #a78bfa, #c084fc)",
-    },
-  },
-  {
-    id: "rose", name: "玫瑰红", preview: "#e11d48",
-    light: {
-      "--c-accent": "#e11d48",
-      "--c-accent-soft": "rgba(225, 29, 72, 0.06)",
-      "--c-accent-border": "rgba(225, 29, 72, 0.15)",
-      "--c-accent-text": "#be123c",
-      "--c-user-bubble": "linear-gradient(135deg, #be123c, #f43f5e)",
-      "--c-ai-avatar-from": "rgba(225, 29, 72, 0.12)",
-      "--c-ai-avatar-to": "rgba(225, 29, 72, 0.04)",
-      "--c-inline-code-bg": "rgba(225, 29, 72, 0.06)",
-      "--c-inline-code-text": "#be123c",
-      "--c-blockquote-border": "rgba(225, 29, 72, 0.25)",
-      "--c-link": "#be123c",
-      "--c-btn-gradient": "linear-gradient(135deg, #be123c, #f43f5e)",
-      "--c-btn-shadow": "rgba(225, 29, 72, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #e11d48, #f43f5e)",
-    },
-    dark: {
-      "--c-accent": "#fb7185",
-      "--c-accent-soft": "rgba(251, 113, 133, 0.08)",
-      "--c-accent-border": "rgba(251, 113, 133, 0.18)",
-      "--c-accent-text": "#fda4af",
-      "--c-user-bubble": "linear-gradient(135deg, #f43f5e, #fb923c)",
-      "--c-ai-avatar-from": "rgba(251, 113, 133, 0.14)",
-      "--c-ai-avatar-to": "rgba(251, 113, 133, 0.05)",
-      "--c-inline-code-bg": "rgba(251, 113, 133, 0.1)",
-      "--c-inline-code-text": "#fda4af",
-      "--c-blockquote-border": "rgba(251, 113, 133, 0.25)",
-      "--c-link": "#fda4af",
-      "--c-btn-gradient": "linear-gradient(135deg, #e11d48, #f43f5e)",
-      "--c-btn-shadow": "rgba(251, 113, 133, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #fb7185, #fda4af)",
-    },
-  },
-  {
-    id: "amber", name: "琥珀金", preview: "#d97706",
-    light: {
-      "--c-accent": "#d97706",
-      "--c-accent-soft": "rgba(217, 119, 6, 0.06)",
-      "--c-accent-border": "rgba(217, 119, 6, 0.15)",
-      "--c-accent-text": "#b45309",
-      "--c-user-bubble": "linear-gradient(135deg, #b45309, #f59e0b)",
-      "--c-ai-avatar-from": "rgba(217, 119, 6, 0.12)",
-      "--c-ai-avatar-to": "rgba(217, 119, 6, 0.04)",
-      "--c-inline-code-bg": "rgba(217, 119, 6, 0.06)",
-      "--c-inline-code-text": "#b45309",
-      "--c-blockquote-border": "rgba(217, 119, 6, 0.25)",
-      "--c-link": "#b45309",
-      "--c-btn-gradient": "linear-gradient(135deg, #b45309, #f59e0b)",
-      "--c-btn-shadow": "rgba(217, 119, 6, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #d97706, #f59e0b)",
-    },
-    dark: {
-      "--c-accent": "#fbbf24",
-      "--c-accent-soft": "rgba(251, 191, 36, 0.08)",
-      "--c-accent-border": "rgba(251, 191, 36, 0.18)",
-      "--c-accent-text": "#fcd34d",
-      "--c-user-bubble": "linear-gradient(135deg, #f59e0b, #fbbf24)",
-      "--c-ai-avatar-from": "rgba(251, 191, 36, 0.14)",
-      "--c-ai-avatar-to": "rgba(251, 191, 36, 0.05)",
-      "--c-inline-code-bg": "rgba(251, 191, 36, 0.1)",
-      "--c-inline-code-text": "#fcd34d",
-      "--c-blockquote-border": "rgba(251, 191, 36, 0.25)",
-      "--c-link": "#fcd34d",
-      "--c-btn-gradient": "linear-gradient(135deg, #d97706, #f59e0b)",
-      "--c-btn-shadow": "rgba(251, 191, 36, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #fbbf24, #fcd34d)",
-    },
-  },
-  {
-    id: "blue", name: "经典蓝", preview: "#2563eb",
-    light: {
-      "--c-accent": "#2563eb",
-      "--c-accent-soft": "rgba(37, 99, 235, 0.06)",
-      "--c-accent-border": "rgba(37, 99, 235, 0.15)",
-      "--c-accent-text": "#1d4ed8",
-      "--c-user-bubble": "linear-gradient(135deg, #1d4ed8, #3b82f6)",
-      "--c-ai-avatar-from": "rgba(37, 99, 235, 0.12)",
-      "--c-ai-avatar-to": "rgba(37, 99, 235, 0.04)",
-      "--c-inline-code-bg": "rgba(37, 99, 235, 0.06)",
-      "--c-inline-code-text": "#1d4ed8",
-      "--c-blockquote-border": "rgba(37, 99, 235, 0.25)",
-      "--c-link": "#1d4ed8",
-      "--c-btn-gradient": "linear-gradient(135deg, #1d4ed8, #3b82f6)",
-      "--c-btn-shadow": "rgba(37, 99, 235, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #2563eb, #3b82f6)",
-    },
-    dark: {
-      "--c-accent": "#60a5fa",
-      "--c-accent-soft": "rgba(96, 165, 250, 0.08)",
-      "--c-accent-border": "rgba(96, 165, 250, 0.18)",
-      "--c-accent-text": "#93c5fd",
-      "--c-user-bubble": "linear-gradient(135deg, #3b82f6, #60a5fa)",
-      "--c-ai-avatar-from": "rgba(96, 165, 250, 0.14)",
-      "--c-ai-avatar-to": "rgba(96, 165, 250, 0.05)",
-      "--c-inline-code-bg": "rgba(96, 165, 250, 0.1)",
-      "--c-inline-code-text": "#93c5fd",
-      "--c-blockquote-border": "rgba(96, 165, 250, 0.25)",
-      "--c-link": "#93c5fd",
-      "--c-btn-gradient": "linear-gradient(135deg, #2563eb, #3b82f6)",
-      "--c-btn-shadow": "rgba(96, 165, 250, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #60a5fa, #93c5fd)",
-    },
-  },
-  {
-    id: "slate", name: "水墨黑", preview: "#475569",
-    light: {
-      "--c-accent": "#475569",
-      "--c-accent-soft": "rgba(71, 85, 105, 0.06)",
-      "--c-accent-border": "rgba(71, 85, 105, 0.15)",
-      "--c-accent-text": "#334155",
-      "--c-user-bubble": "linear-gradient(135deg, #334155, #64748b)",
-      "--c-ai-avatar-from": "rgba(71, 85, 105, 0.12)",
-      "--c-ai-avatar-to": "rgba(71, 85, 105, 0.04)",
-      "--c-inline-code-bg": "rgba(71, 85, 105, 0.06)",
-      "--c-inline-code-text": "#334155",
-      "--c-blockquote-border": "rgba(71, 85, 105, 0.25)",
-      "--c-link": "#334155",
-      "--c-btn-gradient": "linear-gradient(135deg, #334155, #64748b)",
-      "--c-btn-shadow": "rgba(71, 85, 105, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #475569, #64748b)",
-    },
-    dark: {
-      "--c-accent": "#94a3b8",
-      "--c-accent-soft": "rgba(148, 163, 184, 0.08)",
-      "--c-accent-border": "rgba(148, 163, 184, 0.18)",
-      "--c-accent-text": "#cbd5e1",
-      "--c-user-bubble": "linear-gradient(135deg, #64748b, #94a3b8)",
-      "--c-ai-avatar-from": "rgba(148, 163, 184, 0.14)",
-      "--c-ai-avatar-to": "rgba(148, 163, 184, 0.05)",
-      "--c-inline-code-bg": "rgba(148, 163, 184, 0.1)",
-      "--c-inline-code-text": "#cbd5e1",
-      "--c-blockquote-border": "rgba(148, 163, 184, 0.25)",
-      "--c-link": "#cbd5e1",
-      "--c-btn-gradient": "linear-gradient(135deg, #475569, #64748b)",
-      "--c-btn-shadow": "rgba(148, 163, 184, 0.25)",
-      "--c-logo-gradient": "linear-gradient(135deg, #94a3b8, #cbd5e1)",
-    },
-  },
-];
 
 export default function Home() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [themeColor, setThemeColor] = useState<string>("slate");
+  const { setTheme: setNextTheme, resolvedTheme } = useTheme();
+  const [accentHex, setAccentHex] = useState("#475569");
+  const [mounted, setMounted] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -427,33 +489,35 @@ export default function Home() {
 
   /* ====== Theme ====== */
   useEffect(() => {
-    const saved = localStorage.getItem("theme") as "light" | "dark" | null;
-    if (saved) setTheme(saved);
-    else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
-    const savedColor = localStorage.getItem("themeColor");
-    if (savedColor && THEME_COLORS.find(c => c.id === savedColor)) setThemeColor(savedColor);
+    setMounted(true);
+    const saved = localStorage.getItem("accentHex");
+    if (saved && /^#[0-9a-fA-F]{6}$/.test(saved)) setAccentHex(saved);
   }, []);
 
   useEffect(() => {
-    const colorDef = THEME_COLORS.find(c => c.id === themeColor);
-    if (!colorDef) return;
-    const vars = theme === "dark" ? colorDef.dark : colorDef.light;
+    if (!colorPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) setColorPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [colorPickerOpen]);
+
+  useEffect(() => {
+    const isDark = resolvedTheme === "dark";
+    const vars = deriveAccentVars(accentHex, isDark);
     const root = document.documentElement;
     Object.entries(vars).forEach(([key, val]) => root.style.setProperty(key, val));
-  }, [theme, themeColor]);
+  }, [resolvedTheme, accentHex]);
 
   const toggleTheme = () => {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    localStorage.setItem("theme", next);
+    setNextTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
-  const changeThemeColor = (colorId: string) => {
-    setThemeColor(colorId);
-    localStorage.setItem("themeColor", colorId);
+  const changeAccentColor = (hex: string) => {
+    setAccentHex(hex);
+    localStorage.setItem("accentHex", hex);
   };
-
-  const currentThemeColor = THEME_COLORS.find(c => c.id === themeColor) || THEME_COLORS[0];
 
   /* ====== Data loading ====== */
   const loadSessions = useCallback(async () => { try { const res = await fetch(`${BASE}/api/sessions`); if (!res.ok) return; const data = await res.json(); setSessions(data.sessions || []); } catch {} }, []);
@@ -724,24 +788,27 @@ export default function Home() {
   const CheckIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>;
 
   return (
-    <div data-theme={theme} className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-300">
+    <div className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-300">
 
       {/* ═══ Sidebar ═══ */}
-      <aside className={`${sidebarOpen ? "w-[272px]" : "w-0"} shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]`}>
-        <div className="flex h-full w-[272px] flex-col bg-panel sidebar-border">
+      <aside className={`${sidebarOpen ? "w-[260px]" : "w-0"} shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]`}>
+        <div className="flex h-full w-[260px] flex-col bg-panel sidebar-border">
 
           {/* Sidebar Header */}
-          <div className="px-4 pt-5 pb-3">
-            <div className="flex items-center gap-2.5 mb-5">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold"
+          <div className="px-4 pt-5 pb-4">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 rounded-[10px] flex items-center justify-center text-white text-[13px] font-bold shadow-sm"
                 style={{ background: "var(--c-logo-gradient)" }}>
                 C
               </div>
-              <span className="text-[15px] font-semibold tracking-tight">Cortex</span>
+              <div className="flex flex-col">
+                <span className="text-[15px] font-semibold tracking-tight leading-tight">Cortex</span>
+                <span className="text-[10px] text-ink-faint leading-tight">AI 智能助手</span>
+              </div>
             </div>
             <button
               onClick={() => setPersonaPickerOpen(true)}
-              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl h-10 text-[13px] font-semibold text-white hover:brightness-110 transition-all"
+              className="btn-press w-full flex items-center justify-center gap-2 rounded-xl h-[38px] text-[13px] font-medium text-white hover:brightness-110 transition-all"
               style={{ background: "var(--c-btn-gradient)", boxShadow: `0 2px 8px var(--c-btn-shadow)` }}
             >
               {PlusIcon}
@@ -783,29 +850,15 @@ export default function Home() {
 
           {/* Sidebar Footer */}
           <div className="p-3 border-t border-line space-y-px">
-            <div className="relative">
+            <div className="relative" ref={colorPickerRef}>
               <button onClick={() => setColorPickerOpen(!colorPickerOpen)}
-                className="btn-press w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover">
-                <span className="w-4 h-4 rounded-full shrink-0 border border-line" style={{ background: currentThemeColor.preview }} />
+                className={`btn-press w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] text-ink-muted hover:text-ink hover:bg-card-hover ${colorPickerOpen ? "bg-card-hover text-ink" : ""}`}>
+                <span className="w-4 h-4 rounded-full shrink-0 border border-line" style={{ background: accentHex }} />
                 主题色
-                <span className="ml-auto text-[11px] text-ink-faint">{currentThemeColor.name}</span>
+                <span className="ml-auto text-[11px] text-ink-faint font-mono">{accentHex}</span>
               </button>
               {colorPickerOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setColorPickerOpen(false)} />
-                  <div className="absolute bottom-full left-2 right-2 mb-2 z-40 p-1.5 rounded-xl bg-panel border border-line flex flex-wrap gap-1 justify-center"
-                    style={{ boxShadow: "var(--c-shadow-lg)", animation: "modalIn 0.15s cubic-bezier(0.16,1,0.3,1)" }}>
-                    {THEME_COLORS.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => { changeThemeColor(c.id); setColorPickerOpen(false); }}
-                        title={c.name}
-                        className="btn-press w-8 h-8 rounded-full transition-all hover:scale-110"
-                        style={{ background: c.preview, boxShadow: themeColor === c.id ? `0 0 0 2.5px var(--c-panel), 0 0 0 4.5px ${c.preview}` : "none" }}
-                      />
-                    ))}
-                  </div>
-                </>
+                <ColorPicker value={accentHex} onChange={changeAccentColor} onClose={() => setColorPickerOpen(false)} />
               )}
             </div>
 
@@ -832,45 +885,50 @@ export default function Home() {
       <div className="flex flex-1 flex-col min-w-0">
 
         {/* Header */}
-        <header className="shrink-0 flex items-center gap-3 px-4 h-14 border-b border-line bg-panel z-10">
+        <header className="shrink-0 flex items-center gap-3 px-5 h-[52px] border-b border-line bg-panel/80 backdrop-blur-md z-10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="btn-press rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover" aria-label="Toggle sidebar">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+            className="btn-press rounded-lg p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover" aria-label="Toggle sidebar">
+            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d={sidebarOpen ? "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"} />
             </svg>
           </button>
 
+          <div className="h-5 w-px bg-line shrink-0" />
+
           <div className="flex-1 min-w-0">
-            <h1 className="text-[14px] font-semibold truncate tracking-tight">
-              {currentSession ? currentSession.title : "Cortex"}
-            </h1>
-            {currentPersona && (
-              <p className="text-[12px] text-ink-muted truncate leading-tight">
-                {currentPersona.emoji} {currentPersona.name}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {currentPersona && <span className="text-[14px]">{currentPersona.emoji}</span>}
+              <h1 className="text-[13px] font-semibold truncate tracking-tight">
+                {currentSession ? currentSession.title : "Cortex"}
+              </h1>
+              {currentPersona && (
+                <span className="text-[11px] text-ink-faint font-medium px-1.5 py-0.5 rounded-md bg-card-hover shrink-0">
+                  {currentPersona.name}
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            <Link href="/"
-              className="btn-press shrink-0 rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover" title="返回">
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
-            </Link>
+          <div className="flex items-center gap-0.5">
+            <a href="/"
+              className="btn-press shrink-0 rounded-lg p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover" title="返回首页">
+              <svg className="w-[17px] h-[17px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+            </a>
             <button onClick={() => { setAnalyzeOpen(true); setAnalysisResult(null); }}
-              className="btn-press shrink-0 rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover" title="文本分析">
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+              className="btn-press shrink-0 rounded-lg p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover" title="文本分析">
+              <svg className="w-[17px] h-[17px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
             </button>
-            <button onClick={toggleTheme}
-              className="btn-press shrink-0 rounded-xl p-2 text-ink-muted hover:text-ink hover:bg-card-hover" title={theme === "light" ? "暗色模式" : "亮色模式"}>
-              {theme === "light" ? MoonIcon : SunIcon}
+            <button onClick={toggleTheme} suppressHydrationWarning
+              className="btn-press shrink-0 rounded-lg p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover" title={mounted ? (resolvedTheme === "light" ? "暗色模式" : "亮色模式") : "切换主题"}>
+              {!mounted ? SunIcon : resolvedTheme === "light" ? MoonIcon : SunIcon}
             </button>
 
             {userInfo && (
-              <div className="shrink-0 ml-1.5 pl-2.5 border-l border-line flex items-center gap-2" title={userInfo.name}>
+              <div className="shrink-0 ml-1 pl-2 border-l border-line flex items-center" title={userInfo.name}>
                 {userInfo.image ? (
                   <img src={userInfo.image} alt={userInfo.name} className="w-7 h-7 rounded-full object-cover ring-1 ring-line" />
                 ) : (
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-panel"
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white"
                     style={{ background: "var(--c-logo-gradient)" }}>
                     {userInfo.name.charAt(0).toUpperCase()}
                   </div>
@@ -894,29 +952,29 @@ export default function Home() {
           <div className="mx-auto max-w-[720px] px-5 py-8 space-y-5">
             {/* Welcome Screen */}
             {!currentSessionId ? (
-              <div className="flex flex-col items-center justify-center py-32 select-none">
-                <div className="welcome-icon w-16 h-16 rounded-2xl flex items-center justify-center text-[32px] mb-8"
+              <div className="flex flex-col items-center justify-center min-h-[65vh] select-none">
+                <div className="welcome-icon w-14 h-14 rounded-2xl flex items-center justify-center text-[28px] mb-6"
                   style={{ background: "linear-gradient(135deg, var(--c-accent-soft), transparent)" }}>
                   ✨
                 </div>
-                <h2 className="welcome-gradient text-3xl font-bold tracking-tight mb-3">开始新对话</h2>
-                <p className="text-[14px] text-ink-muted mb-10 max-w-xs text-center leading-relaxed">
+                <h2 className="welcome-gradient text-2xl font-bold tracking-tight mb-2">开始新对话</h2>
+                <p className="text-[13px] text-ink-muted mb-8 max-w-xs text-center leading-relaxed">
                   联网搜索 · 图片生成 · 文件解析 · MCP 扩展
                 </p>
                 <button onClick={() => setPersonaPickerOpen(true)}
-                  className="btn-press rounded-full px-8 py-3 text-[14px] font-semibold text-white hover:brightness-110 transition-all"
+                  className="btn-press rounded-full px-7 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 transition-all"
                   style={{ background: "var(--c-btn-gradient)", boxShadow: `0 4px 14px var(--c-btn-shadow)` }}>
                   选择角色
                 </button>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-32 select-none">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-[28px] mb-5"
+              <div className="flex flex-col items-center justify-center min-h-[65vh] select-none">
+                <div className="welcome-icon w-12 h-12 rounded-2xl flex items-center justify-center text-[24px] mb-4"
                   style={{ background: "linear-gradient(135deg, var(--c-accent-soft), transparent)" }}>
                   {currentPersona?.emoji || "✨"}
                 </div>
-                <h2 className="text-lg font-semibold tracking-tight mb-1">{currentPersona?.name}</h2>
-                <p className="text-[13px] text-ink-muted">{currentPersona?.desc}</p>
+                <h2 className="text-[17px] font-semibold tracking-tight mb-1">{currentPersona?.name}</h2>
+                <p className="text-[12px] text-ink-muted">{currentPersona?.desc}</p>
               </div>
             ) : (
               messages.map((msg, index) => (
@@ -1045,10 +1103,10 @@ export default function Home() {
 
         {/* ═══ Input Area ═══ */}
         {currentSessionId && (
-          <div className="shrink-0 px-4 pb-5 pt-2">
+          <div className="shrink-0 px-5 pb-4 pt-2">
             <div className="mx-auto max-w-[720px]">
               <div className="input-float rounded-2xl border border-line bg-card overflow-hidden">
-                <div className="px-4 pt-3.5 pb-1.5">
+                <div className="px-4 pt-3 pb-1.5">
                   <textarea
                     ref={textareaRef}
                     value={input}
