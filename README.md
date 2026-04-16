@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PTC Cortex
+
+PTC's AI capability hub — a LangGraph-powered intelligent chat platform with multi-turn conversations, personas, tool calling, web search, file parsing, image generation & understanding, and more.
+
+## Tech Stack
+
+- **Framework**: Next.js 16 (App Router) + React 19
+- **AI Engine**: LangChain + LangGraph (ReAct Agent)
+- **Model**: DeepSeek (OpenAI-compatible)
+- **Database**: PostgreSQL
+- **Styling**: Tailwind CSS v4
+- **Auth**: Auth.js (shared sessions with ink-and-code)
+- **Tool Extension**: MCP (Model Context Protocol)
+
+## Features
+
+- **Multi-turn Chat** — SSE streaming with Markdown rendering and code highlighting
+- **Personas** — Built-in + custom personas to tailor AI behavior per scenario
+- **Tool Calling** — Calculator, time queries, RAG knowledge retrieval, web search, image generation/understanding, file parsing, and more
+- **MCP Servers** — Extensible external tools (Playwright, filesystem, Fetch, etc.)
+- **Text Analysis** — Structured analysis powered by Zod schema validation
+- **File Upload** — PDF, Excel, and other document parsing
+- **Long-term Memory** — PostgreSQL-backed persistent memory across sessions
+- **Theming** — Light/dark mode + custom accent colors
+- **External API** — `/api/v1/chat` provides a stateless streaming interface with Bearer token auth for other services
 
 ## Getting Started
 
-First, run the development server:
+### Environment Variables
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Copy `.env.local.example` (or reference the variables below) to create `.env.local`:
+
+```
+DATABASE_URL=            # PostgreSQL connection string
+DEEPSEEK_API_KEY=        # DeepSeek API key
+DEEPSEEK_BASE_URL=       # DeepSeek API base URL
+API_SECRET_KEY=          # Bearer token for external API auth
+NEXT_PUBLIC_BASE_PATH=   # Deployment sub-path (e.g. /chat), leave empty for local dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Install & Run
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Development server (port 3001)
+npm run dev
 
-## Learn More
+# Production build
+npm run build
 
-To learn more about Next.js, take a look at the following resources:
+# Production server
+npm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3001](http://localhost:3001) to view the app.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+src/
+├── app/
+│   ├── api/           # API routes (chat, sessions, personas, mcp-servers, upload, analyze, user)
+│   ├── layout.tsx     # Root layout (auth guard, theme, fonts)
+│   ├── page.tsx       # Main UI (session list, chat, persona/analysis/MCP panels)
+│   └── globals.css    # Tailwind v4 + design tokens
+├── components/        # UI components
+├── lib/               # Core libraries
+│   ├── graph.ts       # LangGraph agent definition
+│   ├── tools.ts       # Built-in tool set
+│   ├── mcp-client.ts  # MCP client
+│   ├── db.ts          # Database operations
+│   ├── rag.ts         # RAG retrieval
+│   ├── search.ts      # Web search
+│   ├── vision.ts      # Image understanding
+│   ├── image-gen.ts   # Image generation
+│   └── long-memory.ts # Long-term memory
+└── middleware.ts       # Auth middleware
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app supports sub-path deployment via `NEXT_PUBLIC_BASE_PATH` (e.g. `/chat`). Auth relies on shared PostgreSQL sessions with ink-and-code, so both apps must be deployed on the same domain to share cookies.
