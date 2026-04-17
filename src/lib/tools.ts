@@ -274,6 +274,38 @@ export const blogDbQueryTool = tool(
   }
 );
 
+// ===== 工具 10：准备文章发布（草稿 → 前端二次确认） =====
+// 这个工具不会直接发布，只是把结构化草稿标记出来；
+// /api/chat 在 on_tool_end 里识别此工具的输出后，会通过 SSE publish_draft 事件通知前端弹出确认框，
+// 用户在前端点击"确认发布"后才会真正调用 /api/publish-article。
+export const prepareArticlePublishTool = tool(
+  async ({ title, tags, content }) => {
+    return JSON.stringify({
+      __publish_draft__: true,
+      title,
+      tags: tags || [],
+      content,
+    });
+  },
+  {
+    name: "prepare_article_publish",
+    description:
+      "当用户要求撰写文章并发布到博客系统（Ink & Code）时必须使用此工具。" +
+      "将完整的 Markdown 正文、标题、标签作为参数传入，本工具会把草稿交给前端弹出确认发布对话框，" +
+      "由用户审阅后点击确认才真正发布。严禁在未调用此工具的情况下声称已发布文章。",
+    schema: z.object({
+      title: z.string().describe("文章标题"),
+      tags: z
+        .array(z.string())
+        .describe("文章标签数组，例如 ['Next.js', 'React']")
+        .default([]),
+      content: z
+        .string()
+        .describe("完整的文章 Markdown 正文，包含引言、正文和总结"),
+    }),
+  }
+);
+
 // 所有工具的集合
 export const ALL_TOOLS = [
   getCurrentTimeTool,
@@ -287,4 +319,5 @@ export const ALL_TOOLS = [
   fileParserTool,
   blogDbSchemaTool,
   blogDbQueryTool,
+  prepareArticlePublishTool,
 ];

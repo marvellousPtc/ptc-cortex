@@ -289,7 +289,18 @@ function ColorPicker({ value, onChange, onClose }: { value: string; onChange: (h
 /* ====== Types ====== */
 interface ThinkingBlock { content: string; isComplete: boolean; }
 interface ToolCallBlock { name: string; input: Record<string, unknown>; result?: string; isComplete: boolean; }
-interface Message { role: "user" | "assistant"; content: string; thinking?: ThinkingBlock; toolCalls?: ToolCallBlock[]; }
+interface Message {
+  id?: number;
+  role: "user" | "assistant";
+  content: string;
+  parent_id?: number | null;
+  variantIndex?: number;
+  variantTotal?: number;
+  siblings?: number[];
+  thinking?: ThinkingBlock;
+  toolCalls?: ToolCallBlock[];
+}
+interface PublishDraft { title: string; tags: string[]; content: string; }
 interface Session { id: string; title: string; persona: string; created_at: string; updated_at: string; }
 interface CustomPersona { id: string; name: string; emoji: string; description: string; prompt: string; temperature: number; }
 interface AnalysisResult { summary: string; sentiment: "positive" | "negative" | "neutral" | "mixed"; sentimentScore: number; keywords: string[]; category: string; language: string; wordCount: number; readingTime: string; }
@@ -464,6 +475,7 @@ export default function Home() {
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [usageInfo, setUsageInfo] = useState<{ isAdmin: boolean; used: number; limit: number; remaining: number } | null>(null);
   const [mcpModalOpen, setMcpModalOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [newMcp, setNewMcp] = useState<{ name: string; transport: "stdio" | "http"; command: string; args: string; url: string; headers: string }>({ name: "", transport: "stdio", command: "npx", args: "", url: "", headers: "" });
@@ -473,11 +485,17 @@ export default function Home() {
   const [presetEnvValues, setPresetEnvValues] = useState<Record<string, string>>({});
   const [thinkingToggled, setThinkingToggled] = useState<Set<number>>(new Set());
   const [toolToggled, setToolToggled] = useState<Set<string>>(new Set());
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [publishDraft, setPublishDraft] = useState<PublishDraft | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
 
   useEffect(() => {
@@ -521,30 +539,91 @@ export default function Home() {
 
   /* ====== Data loading ====== */
   const loadSessions = useCallback(async () => { try { const res = await fetch(`${BASE}/api/sessions`); if (!res.ok) return; const data = await res.json(); setSessions(data.sessions || []); } catch {} }, []);
-  const loadMessages = useCallback(async (sid: string) => { try { const res = await fetch(`${BASE}/api/sessions?id=${sid}`); if (!res.ok) return; const data = await res.json(); setMessages((data.messages || []).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }))); } catch {} }, []);
+  const loadMessages = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch(`${BASE}/api/sessions?id=${sid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMessages(
+        (data.messages || []).map(
+          (m: {
+            id: number;
+            role: "user" | "assistant";
+            content: string;
+            parent_id: number | null;
+            variantIndex: number;
+            variantTotal: number;
+            siblings: number[];
+          }) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            parent_id: m.parent_id,
+            variantIndex: m.variantIndex,
+            variantTotal: m.variantTotal,
+            siblings: m.siblings,
+          })
+        )
+      );
+    } catch {}
+  }, []);
   const loadCustomPersonas = useCallback(async () => { try { const res = await fetch(`${BASE}/api/personas`); if (!res.ok) return; const data = await res.json(); setCustomPersonas(data.personas || []); } catch {} }, []);
   const loadMcpServers = useCallback(async () => { try { const res = await fetch(`${BASE}/api/mcp-servers`); if (res.ok) { const data = await res.json(); setMcpServers(data.servers || []); } } catch {} }, []);
 
   useEffect(() => { loadSessions(); loadCustomPersonas(); loadMcpServers(); }, [loadSessions, loadCustomPersonas, loadMcpServers]);
+  const refreshUsage = useCallback(() => {
+    fetch(`${BASE}/api/usage`).then(r => r.ok ? r.json() : null).then(d => { if (d?.authenticated) setUsageInfo(d); }).catch(() => {});
+  }, []);
   useEffect(() => {
     fetch(`${BASE}/api/user`).then(r => r.ok ? r.json() : null).then(d => { if (d) setUserInfo(d); }).catch(() => {});
-  }, []);
+    refreshUsage();
+  }, [refreshUsage]);
   useEffect(() => { if (currentSessionId) loadMessages(currentSessionId); }, [currentSessionId, loadMessages]);
+  // 流式回答阶段我们是**直接赋值 scrollTop**（非平滑），避免 smooth 动画和用户的真滚动事件
+  // 纠缠在一起；这样 onScroll 里的判断能干净地区分"我们推下去"和"用户扒上来"。
   useEffect(() => {
-    if (!userScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (userScrolledUp) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages, userScrolledUp]);
+
+  // 用户任何主动的滚动交互（滚轮、触摸、键盘 PageUp/Home/方向键）一律视为"我要看历史"，
+  // 立即挂起自动滚动——不再靠「距离底部 > 150px」这种阈值判断，
+  // 否则流式 token 每 100ms 把视图拉回底部，用户滚到一半就被反向冲回来。
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) setUserScrolledUp(true);
+    };
+    const onTouchStart = () => setUserScrolledUp(true);
+    const onKey = (e: KeyboardEvent) => {
+      if (["PageUp", "Home", "ArrowUp"].includes(e.key)) {
+        setUserScrolledUp(true);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   const handleMessagesScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setUserScrolledUp(distanceFromBottom > 150);
+    // 只有在用户**实际回到底部**（阈值放小到 40px）时才重新允许自动跟随
+    if (distanceFromBottom < 40) setUserScrolledUp(false);
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
     setUserScrolledUp(false);
   };
 
@@ -653,21 +732,94 @@ export default function Home() {
     return mcpServers.some(s => s.name === preset.name);
   };
 
-  /* ====== Send Message (SSE) ====== */
-  const sendMessage = async () => {
-    if (!input.trim() || loading || !currentSessionId) return;
-    const userMessage: Message = { role: "user", content: input.trim() };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages); setInput(""); setLoading(true);
+  /* ====== Send / Edit / Regenerate (SSE) ====== */
+  type ChatRequestOpts = {
+    message?: string;
+    parentId?: number | null;
+    regenerateFromUserMessageId?: number | null;
+    optimisticUserContent?: string;
+  };
+
+  const runChatStream = async (opts: ChatRequestOpts) => {
+    if (loading || !currentSessionId) return;
+    setLoading(true);
     setThinkingToggled(new Set());
     setToolToggled(new Set());
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    // 剥离上一次失败请求残留的「未落库错误气泡」：我们在 4xx/5xx 场景刻意跳过了 loadMessages，
+    // 所以前一轮的错误提示和对应的乐观 user 消息还挂在 UI 里。新一轮发送前把它们清掉，
+    // 避免用户看到的是"旧错误 + 新成功"并列的困惑画面。
+    const cleanedMessages: Message[] = [];
+    for (const m of messages) {
+      if (m.id === undefined) continue; // 未落库（乐观插入）全部丢弃
+      cleanedMessages.push(m);
+    }
+
+    // 乐观 UI：追加临时 user 消息（重新生成时不加）。注意：**不要预占空 assistant**，
+    // 否则底部「正在思考」indicator 不会显示，会出现只有头像、没有任何状态的空气泡。
+    // 我们等首个 SSE 事件到达再插入 assistant 消息。
+    const optimisticUser: Message | null =
+      opts.optimisticUserContent !== undefined
+        ? { role: "user", content: opts.optimisticUserContent }
+        : null;
+    const baseMessages = optimisticUser ? [...cleanedMessages, optimisticUser] : [...cleanedMessages];
+    setMessages(baseMessages);
+    const aiIdx = baseMessages.length;
+    let assistantInserted = false;
+    const ensureAssistant = () => {
+      if (assistantInserted) return;
+      assistantInserted = true;
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "", thinking: undefined, toolCalls: undefined },
+      ]);
+    };
+
+    // 后端在 addMessage 之前就 4xx/5xx 时，user 消息根本没落库；
+    // finally 里如果照常 loadMessages 会把乐观插入的 user 气泡 + 错误提示一起冲掉，
+    // 表现就是「点发送整个对话框瞬间消失」。用这个 flag 跳过失败时的重拉。
+    let messagePersisted = false;
+
     try {
-      const response = await fetch(`${BASE}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userMessage.content, sessionId: currentSessionId, webSearchEnabled, reasoningMode }) });
-      if (!response.ok) { const data = await response.json(); setMessages([...newMessages, { role: "assistant", content: `错误: ${data.error}` }]); return; }
-      const reader = response.body?.getReader(); const decoder = new TextDecoder();
+      const response = await fetch(`${BASE}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: opts.message,
+          sessionId: currentSessionId,
+          webSearchEnabled,
+          reasoningMode,
+          parentId: opts.parentId ?? null,
+          regenerateFromUserMessageId: opts.regenerateFromUserMessageId ?? null,
+        }),
+        signal: abortController.signal,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        ensureAssistant();
+        const niceMsg =
+          response.status === 429
+            ? `请求过于频繁：${data.error || "请稍后再试"}`
+            : response.status === 401
+              ? "未登录或登录已过期，请刷新页面重新登录"
+              : `错误: ${data.error || response.statusText}`;
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[aiIdx] = {
+            role: "assistant",
+            content: niceMsg,
+          };
+          return updated;
+        });
+        return;
+      }
+      messagePersisted = true;
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
       if (!reader) throw new Error("无法获取响应流");
-      const aiIdx = newMessages.length;
-      setMessages([...newMessages, { role: "assistant", content: "", thinking: undefined, toolCalls: undefined }]);
 
       let buffer = "";
       while (true) {
@@ -682,9 +834,32 @@ export default function Home() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
+
+            // 特殊 SSE：发布草稿 → 弹出确认框
+            if (data.type === "publish_draft") {
+              setPublishDraft({
+                title: data.title || "",
+                tags: Array.isArray(data.tags) ? data.tags : [],
+                content: data.content || "",
+              });
+              continue;
+            }
+
+            // 首条会影响气泡渲染的事件到达前，先确保 assistant 消息已经插入
+            if (
+              data.type === "thinking" ||
+              data.type === "thinking_end" ||
+              data.type === "tool_start" ||
+              data.type === "tool_end" ||
+              data.type === "content" ||
+              data.type === "error"
+            ) {
+              ensureAssistant();
+            }
+
             setMessages((prev) => {
               const updated = [...prev];
-              const msg = { ...updated[aiIdx] };
+              const msg = { ...(updated[aiIdx] || { role: "assistant", content: "" }) };
 
               switch (data.type) {
                 case "thinking":
@@ -731,12 +906,171 @@ export default function Home() {
           } catch { /* skip malformed SSE */ }
         }
       }
+    } catch (err) {
+      const isAbort =
+        err instanceof DOMException && err.name === "AbortError";
+      if (!isAbort) {
+        ensureAssistant();
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[aiIdx] = {
+            role: "assistant",
+            content: "网络错误，请检查服务是否正常运行",
+          };
+          return updated;
+        });
+      }
+    } finally {
+      setLoading(false);
+      abortControllerRef.current = null;
+      // 仅当请求成功进入流式阶段（messagePersisted=true）时才重拉 DB；
+      // 否则会用空数据覆盖掉乐观 UI 上的错误提示和 user 气泡。
+      if (messagePersisted && currentSessionId) {
+        await loadMessages(currentSessionId);
+      }
       loadSessions();
-    } catch { setMessages((prev) => [...prev.filter((m) => m.content !== ""), { role: "assistant", content: "网络错误，请检查服务是否正常运行" }]); }
-    finally { setLoading(false); }
+      refreshUsage();
+    }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+  const sendMessage = async () => {
+    if (!input.trim() || loading || !currentSessionId) return;
+    const content = input.trim();
+    setInput("");
+    await runChatStream({
+      message: content,
+      optimisticUserContent: content,
+      parentId: null, // 后端会用 active_leaf_id
+    });
+  };
+
+  const stopGeneration = () => {
+    abortControllerRef.current?.abort();
+  };
+
+  const regenerateAnswer = async (assistantIdx: number) => {
+    if (loading) return;
+    // 找到 assistant 对应的上一条 user 消息
+    let userMsg: Message | undefined;
+    for (let i = assistantIdx - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        userMsg = messages[i];
+        break;
+      }
+    }
+    if (!userMsg?.id) return;
+
+    // 切掉当前 assistant 及之后的消息（视觉层面），后端会基于 user message 的 parent 重新生成
+    setMessages((prev) => prev.slice(0, assistantIdx));
+    await runChatStream({ regenerateFromUserMessageId: userMsg.id });
+  };
+
+  const startEditMessage = (msg: Message) => {
+    if (!msg.id || loading) return;
+    setEditingMessageId(msg.id);
+    setEditingText(msg.content);
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  const submitEditMessage = async () => {
+    if (editingMessageId === null || !editingText.trim() || loading) return;
+    const original = messages.find((m) => m.id === editingMessageId);
+    if (!original) return;
+    const content = editingText.trim();
+    const parentId = original.parent_id ?? null;
+
+    // 裁掉被编辑消息及其下游消息
+    const editIdx = messages.findIndex((m) => m.id === editingMessageId);
+    if (editIdx >= 0) {
+      setMessages((prev) => prev.slice(0, editIdx));
+    }
+
+    setEditingMessageId(null);
+    setEditingText("");
+    await runChatStream({
+      message: content,
+      optimisticUserContent: content,
+      parentId,
+    });
+  };
+
+  const copyMessageContent = async (msg: Message) => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      if (msg.id !== undefined) {
+        setCopiedMessageId(msg.id);
+        setTimeout(() => setCopiedMessageId((cur) => (cur === msg.id ? null : cur)), 1500);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const switchVariant = async (msg: Message, direction: -1 | 1) => {
+    if (
+      !msg.siblings ||
+      msg.variantIndex === undefined ||
+      msg.variantTotal === undefined ||
+      msg.variantTotal <= 1 ||
+      !currentSessionId ||
+      loading
+    )
+      return;
+    const newIndex = msg.variantIndex + direction;
+    if (newIndex < 0 || newIndex >= msg.variantTotal) return;
+    const targetId = msg.siblings[newIndex];
+    try {
+      await fetch(`${BASE}/api/sessions`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: currentSessionId, messageId: targetId }),
+      });
+      await loadMessages(currentSessionId);
+    } catch { /* ignore */ }
+  };
+
+  const handlePublishConfirm = async () => {
+    if (!publishDraft || publishing) return;
+    setPublishing(true);
+    try {
+      const res = await fetch(`${BASE}/api/publish-article`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: publishDraft.title,
+          content: publishDraft.content,
+          tags: publishDraft.tags,
+          published: false,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "发布失败");
+        return;
+      }
+      const link = data.url
+        ? `\n\n✅ 已创建草稿：[${data.title}](${data.url})`
+        : `\n\n✅ 已创建草稿：${data.title}`;
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `文章发布成功！${link}` },
+      ]);
+      setPublishDraft(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "发布出错");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file || !currentSessionId) return;
@@ -784,8 +1118,14 @@ export default function Home() {
   const CloseIcon = <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>;
   const GlobeIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>;
   const SendIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>;
+  const StopIcon = <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>;
   const ChevronIcon = <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>;
+  const ChevronLeftIcon = <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>;
+  const ChevronRightIcon = <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>;
   const CheckIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>;
+  const CopyIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>;
+  const RegenerateIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
+  const EditIcon = <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>;
 
   return (
     <div className="flex h-screen bg-page text-ink overflow-hidden transition-colors duration-300">
@@ -922,6 +1262,17 @@ export default function Home() {
               className="btn-press shrink-0 rounded-lg p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover" title={mounted ? (resolvedTheme === "light" ? "暗色模式" : "亮色模式") : "切换主题"}>
               {!mounted ? SunIcon : resolvedTheme === "light" ? MoonIcon : SunIcon}
             </button>
+
+            {usageInfo && !usageInfo.isAdmin && (
+              <span className="text-[11px] text-ink-faint font-medium px-1.5 py-0.5 rounded-md bg-card-hover shrink-0" title={`今日已用 ${usageInfo.used}/${usageInfo.limit} 次`}>
+                {usageInfo.remaining}/{usageInfo.limit}
+              </span>
+            )}
+            {usageInfo?.isAdmin && (
+              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ color: "var(--c-accent)", background: "var(--c-accent-soft)" }}>
+                Admin
+              </span>
+            )}
 
             {userInfo && (
               <div className="shrink-0 ml-1 pl-2 border-l border-line flex items-center" title={userInfo.name}>
@@ -1060,12 +1411,135 @@ export default function Home() {
                           )}
                         </div>
                       )}
+
+                      {/* AI Action Bar */}
+                      {msg.id !== undefined && msg.content && !loading && (
+                        <div className="mt-1.5 flex items-center gap-0.5 text-ink-faint">
+                          <button
+                            onClick={() => copyMessageContent(msg)}
+                            className="btn-press rounded-md p-1.5 hover:text-ink hover:bg-card-hover transition-colors"
+                            title="复制"
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <span className="text-green-text">{CheckIcon}</span>
+                            ) : (
+                              CopyIcon
+                            )}
+                          </button>
+                          <button
+                            onClick={() => regenerateAnswer(index)}
+                            className="btn-press rounded-md p-1.5 hover:text-ink hover:bg-card-hover transition-colors"
+                            title="重新生成"
+                          >
+                            {RegenerateIcon}
+                          </button>
+                          {msg.variantTotal !== undefined && msg.variantTotal > 1 && (
+                            <div className="flex items-center ml-1">
+                              <button
+                                onClick={() => switchVariant(msg, -1)}
+                                disabled={(msg.variantIndex ?? 0) === 0}
+                                className="btn-press rounded-md p-1 hover:text-ink hover:bg-card-hover transition-colors disabled:opacity-30"
+                                title="上一个版本"
+                              >
+                                {ChevronLeftIcon}
+                              </button>
+                              <span className="text-[11px] font-mono tabular-nums px-0.5">
+                                {(msg.variantIndex ?? 0) + 1}/{msg.variantTotal}
+                              </span>
+                              <button
+                                onClick={() => switchVariant(msg, 1)}
+                                disabled={(msg.variantIndex ?? 0) >= msg.variantTotal - 1}
+                                className="btn-press rounded-md p-1 hover:text-ink hover:bg-card-hover transition-colors disabled:opacity-30"
+                                title="下一个版本"
+                              >
+                                {ChevronRightIcon}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     /* ── User Message ── */
-                    <div className="max-w-[75%] rounded-2xl px-4 py-3 text-[14px] leading-[1.7] text-white"
-                      style={{ background: "var(--c-user-bubble)", boxShadow: `0 2px 10px var(--c-btn-shadow)` }}>
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    <div className="flex flex-col items-end max-w-[75%] min-w-0">
+                      {editingMessageId === msg.id ? (
+                        <div className="w-full rounded-2xl bg-card border border-accent-border px-3 py-2.5"
+                          style={{ boxShadow: "var(--c-shadow)" }}>
+                          <textarea
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            rows={Math.min(10, Math.max(2, editingText.split("\n").length))}
+                            autoFocus
+                            className="w-full bg-transparent text-[14px] text-ink outline-none resize-none leading-relaxed"
+                          />
+                          <div className="flex items-center justify-end gap-2 mt-2">
+                            <button
+                              onClick={cancelEditMessage}
+                              className="btn-press rounded-lg px-3 py-1 text-[12px] text-ink-muted hover:text-ink hover:bg-card-hover transition-colors"
+                            >
+                              取消
+                            </button>
+                            <button
+                              onClick={submitEditMessage}
+                              disabled={!editingText.trim()}
+                              className="btn-press rounded-lg px-3 py-1 text-[12px] font-medium text-white disabled:opacity-30 hover:brightness-110 transition-all"
+                              style={{ background: "var(--c-accent)" }}
+                            >
+                              保存并重新生成
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl px-4 py-3 text-[14px] leading-[1.7] text-white"
+                          style={{ background: "var(--c-user-bubble)", boxShadow: `0 2px 10px var(--c-btn-shadow)` }}>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      )}
+                      {editingMessageId !== msg.id && msg.id !== undefined && !loading && (
+                        <div className="mt-1.5 flex items-center gap-0.5 text-ink-faint">
+                          {msg.variantTotal !== undefined && msg.variantTotal > 1 && (
+                            <div className="flex items-center">
+                              <button
+                                onClick={() => switchVariant(msg, -1)}
+                                disabled={(msg.variantIndex ?? 0) === 0}
+                                className="btn-press rounded-md p-1 hover:text-ink hover:bg-card-hover transition-colors disabled:opacity-30"
+                                title="上一个版本"
+                              >
+                                {ChevronLeftIcon}
+                              </button>
+                              <span className="text-[11px] font-mono tabular-nums px-0.5">
+                                {(msg.variantIndex ?? 0) + 1}/{msg.variantTotal}
+                              </span>
+                              <button
+                                onClick={() => switchVariant(msg, 1)}
+                                disabled={(msg.variantIndex ?? 0) >= msg.variantTotal - 1}
+                                className="btn-press rounded-md p-1 hover:text-ink hover:bg-card-hover transition-colors disabled:opacity-30"
+                                title="下一个版本"
+                              >
+                                {ChevronRightIcon}
+                              </button>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => copyMessageContent(msg)}
+                            className="btn-press rounded-md p-1.5 hover:text-ink hover:bg-card-hover transition-colors"
+                            title="复制"
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <span className="text-green-text">{CheckIcon}</span>
+                            ) : (
+                              CopyIcon
+                            )}
+                          </button>
+                          <button
+                            onClick={() => startEditMessage(msg)}
+                            className="btn-press rounded-md p-1.5 hover:text-ink hover:bg-card-hover transition-colors"
+                            title="编辑"
+                          >
+                            {EditIcon}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1146,11 +1620,20 @@ export default function Home() {
                       className="btn-press rounded-lg p-2 text-ink-faint hover:text-ink-muted hover:bg-card-hover transition-colors disabled:opacity-30" title="上传文件">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
                     </button>
-                    <button onClick={sendMessage} disabled={loading || !input.trim()}
-                      className="btn-press shrink-0 rounded-xl p-2 transition-all disabled:opacity-20"
-                      style={{ background: input.trim() ? "var(--c-accent)" : "var(--c-ink-faint)", color: "#fff" }}>
-                      {SendIcon}
-                    </button>
+                    {loading ? (
+                      <button onClick={stopGeneration}
+                        className="btn-press shrink-0 rounded-xl p-2 transition-all text-white"
+                        style={{ background: "var(--c-accent)" }}
+                        title="停止生成">
+                        {StopIcon}
+                      </button>
+                    ) : (
+                      <button onClick={sendMessage} disabled={!input.trim()}
+                        className="btn-press shrink-0 rounded-xl p-2 transition-all disabled:opacity-20"
+                        style={{ background: input.trim() ? "var(--c-accent)" : "var(--c-ink-faint)", color: "#fff" }}>
+                        {SendIcon}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1586,6 +2069,91 @@ export default function Home() {
                   确认
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ Publish Article Modal ═══════ */}
+      {publishDraft && (
+        <div className="modal-overlay fixed inset-0 z-[70] flex items-center justify-center bg-overlay backdrop-blur-xl"
+          onClick={() => !publishing && setPublishDraft(null)}>
+          <div className="modal-glass w-full max-w-3xl mx-4 border border-line max-h-[88vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center justify-between px-6 py-5 border-b border-line">
+              <div>
+                <h2 className="text-[16px] font-semibold tracking-tight flex items-center gap-2">
+                  <span className="text-lg">📝</span>
+                  确认发布到 Ink &amp; Code
+                </h2>
+                <p className="text-[12px] text-ink-muted mt-0.5">审阅 AI 草稿，可编辑后一键发布（默认为未公开）</p>
+              </div>
+              <button
+                onClick={() => !publishing && setPublishDraft(null)}
+                disabled={publishing}
+                className="btn-press rounded-xl p-1.5 text-ink-muted hover:text-ink hover:bg-card-hover disabled:opacity-30">
+                {CloseIcon}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <div>
+                <label className="text-[11px] text-ink-muted mb-1 block">标题</label>
+                <input
+                  value={publishDraft.title}
+                  onChange={(e) => setPublishDraft({ ...publishDraft, title: e.target.value })}
+                  disabled={publishing}
+                  className="w-full h-10 rounded-xl bg-input-bg border border-line px-3 text-[14px] outline-none focus:border-accent focus:ring-2 focus:ring-accent/10 transition-all disabled:opacity-60" />
+              </div>
+              <div>
+                <label className="text-[11px] text-ink-muted mb-1 block">标签（逗号分隔）</label>
+                <input
+                  value={publishDraft.tags.join(", ")}
+                  onChange={(e) =>
+                    setPublishDraft({
+                      ...publishDraft,
+                      tags: e.target.value.split(/[，,]/).map(s => s.trim()).filter(Boolean),
+                    })
+                  }
+                  disabled={publishing}
+                  placeholder="例：Next.js, React, LangGraph"
+                  className="w-full h-10 rounded-xl bg-input-bg border border-line px-3 text-[13px] outline-none focus:border-accent focus:ring-2 focus:ring-accent/10 transition-all disabled:opacity-60" />
+              </div>
+              <div>
+                <label className="text-[11px] text-ink-muted mb-1 block">正文（Markdown）</label>
+                <textarea
+                  value={publishDraft.content}
+                  onChange={(e) => setPublishDraft({ ...publishDraft, content: e.target.value })}
+                  disabled={publishing}
+                  rows={16}
+                  className="w-full rounded-xl bg-input-bg border border-line px-3 py-2.5 text-[13px] font-mono outline-none resize-y focus:border-accent focus:ring-2 focus:ring-accent/10 transition-all disabled:opacity-60"
+                  style={{ minHeight: "280px" }} />
+              </div>
+
+              <details className="rounded-xl border border-line bg-card">
+                <summary className="px-4 py-2.5 text-[12px] text-ink-muted cursor-pointer hover:text-ink-secondary">预览</summary>
+                <div className="px-4 pb-4 markdown-body text-[13px] leading-[1.7]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                    {publishDraft.content}
+                  </ReactMarkdown>
+                </div>
+              </details>
+            </div>
+
+            <div className="shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-line">
+              <button
+                onClick={() => !publishing && setPublishDraft(null)}
+                disabled={publishing}
+                className="btn-press rounded-xl border border-line px-4 py-2 text-[13px] text-ink-muted hover:bg-card-hover transition-all disabled:opacity-30">
+                取消
+              </button>
+              <button
+                onClick={handlePublishConfirm}
+                disabled={publishing || !publishDraft.title.trim() || !publishDraft.content.trim()}
+                className="btn-press rounded-xl bg-accent px-5 py-2 text-[13px] font-semibold text-white disabled:opacity-30 hover:brightness-110 transition-all"
+                style={{ boxShadow: `0 2px 8px var(--c-btn-shadow)` }}>
+                {publishing ? "发布中..." : "确认发布"}
+              </button>
             </div>
           </div>
         </div>
