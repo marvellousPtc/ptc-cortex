@@ -15,6 +15,8 @@ PTC's AI capability hub — a LangGraph-powered intelligent chat platform with m
 ## Features
 
 - **Multi-turn Chat** — SSE streaming with Markdown rendering and code highlighting
+- **Stop / Regenerate / Edit** — Interrupt streaming, regenerate an answer, or edit a past question; alternative versions are preserved and switchable via `< n/total >`
+- **One-shot Publish** — Ask "写一篇 XX 并发布", the AI drafts Markdown and calls `prepare_article_publish`; a confirmation modal lets you review & push to Ink & Code
 - **Personas** — Built-in + custom personas to tailor AI behavior per scenario
 - **Tool Calling** — Calculator, time queries, RAG knowledge retrieval, web search, image generation/understanding, file parsing, and more
 - **MCP Servers** — Extensible external tools (Playwright, filesystem, Fetch, etc.)
@@ -36,6 +38,11 @@ DEEPSEEK_API_KEY=        # DeepSeek API key
 DEEPSEEK_BASE_URL=       # DeepSeek API base URL
 API_SECRET_KEY=          # Bearer token for external API auth
 NEXT_PUBLIC_BASE_PATH=   # Deployment sub-path (e.g. /chat), leave empty for local dev
+INK_AND_CODE_URL=        # Ink & Code base URL, used by the publish-article tool
+INK_AND_CODE_TOKEN=      # Optional. Bearer token fallback; normally unnecessary because
+                         # the publish-article route forwards the current user's session
+                         # cookie to Ink & Code (shared Auth.js session). Only set this
+                         # when cookie forwarding is not viable (e.g. different domain).
 ```
 
 ### Install & Run

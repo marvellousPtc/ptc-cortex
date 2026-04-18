@@ -451,6 +451,18 @@ const BUILTIN_PERSONAS = [
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
+// 开发者 token：配置后，客户端会在受限 API 调用里带上 x-developer-token 请求头，
+// 后端据此豁免每日对话次数限制（与管理员身份效果一致）。
+const DEVELOPER_TOKEN = process.env.NEXT_PUBLIC_DEVELOPER_TOKEN || "";
+
+/** 为需要走用量/限额逻辑的请求补上开发者 token 头。 */
+function withDeveloperHeader(init: RequestInit = {}): RequestInit {
+  if (!DEVELOPER_TOKEN) return init;
+  const headers = new Headers(init.headers || {});
+  headers.set("x-developer-token", DEVELOPER_TOKEN);
+  return { ...init, headers };
+}
+
 
 export default function Home() {
   const { setTheme: setNextTheme, resolvedTheme } = useTheme();
@@ -475,7 +487,7 @@ export default function Home() {
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  const [usageInfo, setUsageInfo] = useState<{ isAdmin: boolean; used: number; limit: number; remaining: number } | null>(null);
+  const [usageInfo, setUsageInfo] = useState<{ isAdmin: boolean; isDeveloper?: boolean; used: number; limit: number; remaining: number } | null>(null);
   const [mcpModalOpen, setMcpModalOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [newMcp, setNewMcp] = useState<{ name: string; transport: "stdio" | "http"; command: string; args: string; url: string; headers: string }>({ name: "", transport: "stdio", command: "npx", args: "", url: "", headers: "" });
@@ -572,7 +584,7 @@ export default function Home() {
 
   useEffect(() => { loadSessions(); loadCustomPersonas(); loadMcpServers(); }, [loadSessions, loadCustomPersonas, loadMcpServers]);
   const refreshUsage = useCallback(() => {
-    fetch(`${BASE}/api/usage`).then(r => r.ok ? r.json() : null).then(d => { if (d?.authenticated) setUsageInfo(d); }).catch(() => {});
+    fetch(`${BASE}/api/usage`, withDeveloperHeader()).then(r => r.ok ? r.json() : null).then(d => { if (d?.authenticated) setUsageInfo(d); }).catch(() => {});
   }, []);
   useEffect(() => {
     fetch(`${BASE}/api/user`).then(r => r.ok ? r.json() : null).then(d => { if (d) setUserInfo(d); }).catch(() => {});
@@ -784,7 +796,7 @@ export default function Home() {
     let messagePersisted = false;
 
     try {
-      const response = await fetch(`${BASE}/api/chat`, {
+      const response = await fetch(`${BASE}/api/chat`, withDeveloperHeader({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -796,7 +808,7 @@ export default function Home() {
           regenerateFromUserMessageId: opts.regenerateFromUserMessageId ?? null,
         }),
         signal: abortController.signal,
-      });
+      }));
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         ensureAssistant();
@@ -1263,7 +1275,7 @@ export default function Home() {
               {!mounted ? SunIcon : resolvedTheme === "light" ? MoonIcon : SunIcon}
             </button>
 
-            {usageInfo && !usageInfo.isAdmin && (
+            {usageInfo && !usageInfo.isAdmin && !usageInfo.isDeveloper && (
               <span className="text-[11px] text-ink-faint font-medium px-1.5 py-0.5 rounded-md bg-card-hover shrink-0" title={`今日已用 ${usageInfo.used}/${usageInfo.limit} 次`}>
                 {usageInfo.remaining}/{usageInfo.limit}
               </span>
@@ -1271,6 +1283,11 @@ export default function Home() {
             {usageInfo?.isAdmin && (
               <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ color: "var(--c-accent)", background: "var(--c-accent-soft)" }}>
                 Admin
+              </span>
+            )}
+            {usageInfo && !usageInfo.isAdmin && usageInfo.isDeveloper && (
+              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md shrink-0" style={{ color: "var(--c-accent)", background: "var(--c-accent-soft)" }} title="开发者身份，不受每日对话次数限制">
+                Developer
               </span>
             )}
 

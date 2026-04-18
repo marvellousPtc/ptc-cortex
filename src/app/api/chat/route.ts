@@ -23,7 +23,7 @@ import {
   recordAiUsage,
 } from "@/lib/db";
 import { getPool } from "@/lib/pg";
-import { getCurrentUserId } from "@/lib/auth-check";
+import { getCurrentUserId, isDeveloperRequest } from "@/lib/auth-check";
 import { createAgent } from "@/lib/graph";
 import { ALL_TOOLS, webSearchTool } from "@/lib/tools";
 import { getMcpTools } from "@/lib/mcp-client";
@@ -121,7 +121,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rateLimitResult = await checkRateLimit(userId);
+    const isDeveloper = isDeveloperRequest(request);
+    const rateLimitResult = await checkRateLimit(userId, { isDeveloper });
     if (rateLimitResult) {
       return new Response(
         JSON.stringify({ error: rateLimitResult.error, code: "RATE_LIMITED" }),

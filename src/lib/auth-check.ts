@@ -79,3 +79,30 @@ export async function getCurrentUserId(
   if (!token) return null;
   return getUserIdFromToken(token);
 }
+
+/**
+ * 判断请求是否携带了合法的开发者 token。
+ *
+ * 约定：
+ *   - 环境变量 `NEXT_PUBLIC_DEVELOPER_TOKEN` 是服务端期望值（同时也会被 Next.js
+ *     注入到浏览器 bundle，客户端据此在请求头中带上 x-developer-token）；
+ *   - 请求头 `x-developer-token` 或 cookie `developer-token` 携带实际值；
+ *   - 只有两者完全一致（且 env 不为空）时才判定为开发者。
+ *
+ * 与管理员身份一样，开发者可以绕过每日对话次数限制。
+ *
+ * 该 token 会随请求明文发给浏览器，故不具备"对客户端保密"的能力；
+ * 它只是一个长随机字符串充当弱鉴权，用途等价于"本机开发调试绕过限额"。
+ */
+export function isDeveloperRequest(request: NextRequest): boolean {
+  const expected = process.env.NEXT_PUBLIC_DEVELOPER_TOKEN;
+  if (!expected) return false;
+
+  const provided =
+    request.headers.get("x-developer-token") ||
+    request.cookies.get("developer-token")?.value ||
+    "";
+
+  if (!provided) return false;
+  return provided === expected;
+}

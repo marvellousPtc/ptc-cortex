@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getCurrentUserId } from "@/lib/auth-check";
+import { getCurrentUserId, isDeveloperRequest } from "@/lib/auth-check";
 import { getUsageInfo } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const info = await getUsageInfo(userId);
+  const isDeveloper = isDeveloperRequest(request);
+  const info = await getUsageInfo(userId, { isDeveloper });
   return new Response(
     JSON.stringify({ authenticated: true, ...info }),
     { status: 200, headers: { "Content-Type": "application/json" } }

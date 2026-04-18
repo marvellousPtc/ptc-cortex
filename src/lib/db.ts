@@ -66,6 +66,17 @@ async function ensureTables() {
     -- 兼容已有表
     ALTER TABLE chat_custom_personas ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
     CREATE INDEX IF NOT EXISTS idx_chat_custom_personas_user ON chat_custom_personas(user_id);
+
+    -- AI 用量表：每次调用 AI 记一行，用 (user_id, date) 做每日次数限流
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL,
+      date DATE NOT NULL,
+      endpoint TEXT NOT NULL DEFAULT 'chat',
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_user_date ON ai_usage(user_id, date);
   `);
 
   // 一次性回填：给旧数据中没有 parent_id 的消息按时间顺序补上链式指针
@@ -440,6 +451,7 @@ export async function isUserAdmin(userId: string): Promise<boolean> {
 
 /** 获取用户今日 AI 使用次数 */
 export async function getTodayUsageCount(userId: string): Promise<number> {
+  await ensureTables();
   const pool = getPool();
   const today = new Date().toISOString().slice(0, 10);
   const { rows } = await pool.query(
@@ -454,6 +466,7 @@ export async function recordAiUsage(
   userId: string,
   endpoint: string = "chat"
 ): Promise<void> {
+  await ensureTables();
   const pool = getPool();
   const today = new Date().toISOString().slice(0, 10);
   await pool.query(
@@ -464,8 +477,11 @@ export async function recordAiUsage(
 
 /** 检查用量限制，返回 null 表示通过，否则返回错误信息 */
 export async function checkRateLimit(
-  userId: string
+  userId: string,
+  opts: { isDeveloper?: boolean } = {}
 ): Promise<{ error: string; remaining: number } | null> {
+  if (opts.isDeveloper) return null;
+
   const admin = await isUserAdmin(userId);
   if (admin) return null;
 
@@ -480,14 +496,20 @@ export async function checkRateLimit(
 }
 
 /** 获取用量信息（供 API 返回给前端） */
-export async function getUsageInfo(userId: string) {
+export async function getUsageInfo(
+  userId: string,
+  opts: { isDeveloper?: boolean } = {}
+) {
   const admin = await isUserAdmin(userId);
+  const isDeveloper = !!opts.isDeveloper;
   const used = await getTodayUsageCount(userId);
+  const unlimited = admin || isDeveloper;
   return {
     isAdmin: admin,
+    isDeveloper,
     used,
-    limit: admin ? -1 : AI_DAILY_LIMIT,
-    remaining: admin ? -1 : Math.max(0, AI_DAILY_LIMIT - used),
+    limit: unlimited ? -1 : AI_DAILY_LIMIT,
+    remaining: unlimited ? -1 : Math.max(0, AI_DAILY_LIMIT - used),
   };
 }
 
